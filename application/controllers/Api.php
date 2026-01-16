@@ -85,7 +85,7 @@ class Api extends CI_Controller
         $html = array();
         $html['status'] = true;
         $html['data'] = $dt;
-        $html['msg'] = "BKA System REST API access has been successful!";
+        $html['msg'] = "Zerone Japan App REST API access has been successful!";
         echo json_encode($html, true);
     }
 
@@ -2761,7 +2761,7 @@ class Api extends CI_Controller
                 $html = array();
                 $html['status'] = false;
                 $html['data'] = $filter;
-                $html['msg'] = "BKA System influencer cronjob will be processed at " . $target . "!";
+                $html['msg'] = "Zerone Japan App influencer cronjob will be processed at " . $target . "!";
                 echo json_encode($html, true);
                 die;
             }
@@ -2940,7 +2940,7 @@ class Api extends CI_Controller
                 $html = array();
                 $html['status'] = false;
                 $html['data'] = $filter;
-                $html['msg'] = "BKA System influencer cronjob will be processed at " . $target . "!";
+                $html['msg'] = "Zerone Japan App influencer cronjob will be processed at " . $target . "!";
                 echo json_encode($html, true);
                 die;
             }
@@ -3279,7 +3279,7 @@ class Api extends CI_Controller
                 $html = array();
                 $html['status'] = false;
                 $html['data'] = $filter;
-                $html['msg'] = "BKA System endorse campaign cronjob will be processed at " . $target . "!";
+                $html['msg'] = "Zerone Japan App endorse campaign cronjob will be processed at " . $target . "!";
                 echo json_encode($html, true);
                 die;
             }
@@ -4217,7 +4217,7 @@ class Api extends CI_Controller
         $html = array();
         $html['status'] = true;
         $html['data'] = $dtt;
-        $html['msg'] = "BKA System webhook live access has been successful!";
+        $html['msg'] = "Zerone Japan App webhook live access has been successful!";
         echo json_encode($html, true);
         die;
     }
@@ -4270,7 +4270,7 @@ class Api extends CI_Controller
         $html = array();
         $html['status'] = true;
         $html['data'] = $dt;
-        $html['msg'] = "BKA System webhook test access has been successful!";
+        $html['msg'] = "Zerone Japan App webhook test access has been successful!";
         echo json_encode($html, true);
     }
     public function auth_marketplace_lazada()
@@ -4284,7 +4284,7 @@ class Api extends CI_Controller
         $config = $config[0];
         $config = json_decode($config['val'], true);
         $cliend_id = $config['client_id'];
-        $url = 'https://app.bkasystem.com/api/auth/lazada';
+        $url = 'https://system.zeronejapan.id/api/auth/lazada';
 
         // if($brand=="MG"){
         //     // $url = 'https://auth.lazada.com/oauth/authorize?response_type=code&force_auth=true&redirect_uri='.$url.'&client_id='.$config['app_key'];

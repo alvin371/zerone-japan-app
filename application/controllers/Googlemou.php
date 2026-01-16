@@ -160,7 +160,7 @@ class Googlemou extends BaseController
     //     $tglIndo    = $this->_format_tanggal_id(date('Y-m-d'));
 
     //     $repl = [
-    //         'brand'                       => $campaign['brand_name'] ?? 'BKA SYSTEM',
+    //         'brand'                       => $campaign['brand_name'] ?? 'ZERONE JAPAN APP',
     //         'pic'                         => $picName,
     //         'full_name'                   => $inf['full_name'] ?? $inf['name'] ?? $nama_creator,
     //         'alamat'                      => $inf['address'] ?? '-',
@@ -361,7 +361,7 @@ class Googlemou extends BaseController
         } else if ($brand_raw == 'POME') {
             $brand = 'POME';
         } else {
-            $brand = 'BKA SYSTEM';
+            $brand = 'ZERONE JAPAN APP';
         }
 
         // === BUILD SOW ===
@@ -711,17 +711,17 @@ class Googlemou extends BaseController
             $this->email->set_crlf("\r\n");
 
             $this->email->clear(true);
-            $this->email->from(env('SMTP_USER', 'mou@bkasystem.com'), 'BKA System - MoU System'); 
+            $this->email->from(env('SMTP_USER', 'mou@bkasystem.com'), 'Zerone Japan App - MoU System'); 
             $this->email->to($email);
             $this->email->subject('MoU Kerja Sama - '.$inf['full_name']);
 
             $linkView = $doc_url ?: $pdf_url;
             $body = "Halo kak {$inf['full_name']},\n\n"
-                . "Terlampir dokumen MoU kerja sama dengan BKA SYSTEM untuk dapat ditinjau.\n"
+                . "Terlampir dokumen MoU kerja sama dengan ZERONE JAPAN APP untuk dapat ditinjau.\n"
                 . "Silakan dibaca kembali, dan hubungi kami jika ada hal yang ingin ditanyakan.\n\n"
                 . "Terima kasih atas kerja samanya.\n\n"
                 . "Salam,\n"
-                . "Tim BKA SYSTEM";
+                . "Tim ZERONE JAPAN APP";
             $this->email->message($body);
 
 

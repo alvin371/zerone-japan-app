@@ -803,7 +803,7 @@ class Template
 
     function title()
     {
-        return 'BKA System';
+        return 'Zerone Japan App';
     }
 
     function hex($i)
