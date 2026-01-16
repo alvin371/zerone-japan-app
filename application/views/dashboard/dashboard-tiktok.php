@@ -29,7 +29,7 @@ if ($_GET['until_date'] == "") {
         <div class="col-lg-12 mb-1">
             <div class="row">
                 <div class="col-md-12">
-                    <h3 class="text-primary fw-600">DASHBOARD TIKTOK ADS BKA SYSTEM</h3>
+                    <h3 class="text-primary fw-600">DASHBOARD TIKTOK ADS ZERONE JAPAN APP</h3>
                 </div>
             </div>
             <script>

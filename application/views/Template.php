@@ -15,7 +15,7 @@ if ($_SESSION['is_login']) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
-  <link rel="shortcut icon" type="image/png" href="<?= base_url() ?>assets/img/fav.png">
+  <link rel="shortcut icon" type="image/png" href="<?= base_url() ?>assets/img/zerone-favicon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://icons.getbootstrap.com/assets/font/bootstrap-icons.css">
@@ -25,9 +25,9 @@ if ($_SESSION['is_login']) {
   if ($data[0]['img']) {
     $img = base_url() . '/assets/webfile/home/' . $data[0]['img'];
   } else {
-    $img = base_url() . '/assets/img/bka-logo.png';
+    $img = base_url() . '/assets/img/zerone-logo.png';
   }
-  $img = base_url() . '/assets/img/fav.png';
+  $img = base_url() . '/assets/img/zerone-favicon.png';
   ?>
   <meta property="og:image" content="<?= $img ?>" />
   <meta property="og:image:width" content="1000" />

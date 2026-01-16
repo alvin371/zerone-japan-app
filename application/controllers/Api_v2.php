@@ -49,7 +49,7 @@ class Api_v2 extends CI_Controller
         $html = array();
         $html['status'] = true;
         $html['data'] = $dt;
-        $html['msg'] = "BKA System REST API access has been successful!";
+        $html['msg'] = "Zerone Japan App REST API access has been successful!";
         echo json_encode($html, true);
     }
     
@@ -3893,7 +3893,7 @@ class Api_v2 extends CI_Controller
                 $html = array();
                 $html['status'] = false;
                 $html['data'] = array();
-                $html['msg'] = "BKA System influencer cronjob will be processed at " . $target . "!";
+                $html['msg'] = "Zerone Japan App influencer cronjob will be processed at " . $target . "!";
                 echo json_encode($html, true);
                 die;
             }
@@ -4322,7 +4322,7 @@ class Api_v2 extends CI_Controller
                 $html = array();
                 $html['status'] = false;
                 $html['data'] = array();
-                $html['msg'] = "BKA System influencer cronjob will be processed at " . $target . "!";
+                $html['msg'] = "Zerone Japan App influencer cronjob will be processed at " . $target . "!";
                 echo json_encode($html, true);
                 die;
             }
@@ -4679,7 +4679,7 @@ class Api_v2 extends CI_Controller
                 $html = array();
                 $html['status'] = false;
                 $html['data'] = array();
-                $html['msg'] = "BKA System endorse campaign cronjob will be processed at " . $target . "!";
+                $html['msg'] = "Zerone Japan App endorse campaign cronjob will be processed at " . $target . "!";
                 echo json_encode($html, true);
                 die;
             }
@@ -4774,7 +4774,7 @@ class Api_v2 extends CI_Controller
                     $html = array();
                     $html['status'] = true;
                     $html['data'] = $dtt;
-                    $html['msg'] = "BKA System webhook live access has been successful!";
+                    $html['msg'] = "Zerone Japan App webhook live access has been successful!";
                     echo json_encode($html, true);
                     die;
                 }
@@ -4787,14 +4787,14 @@ class Api_v2 extends CI_Controller
             $html = array();
             $html['status'] = true;
             $html['data'] = $dtt;
-            $html['msg'] = "BKA System webhook live access has been successful!";
+            $html['msg'] = "Zerone Japan App webhook live access has been successful!";
             echo json_encode($html, true);
             die;
         } else {
             $html = array();
             $html['status'] = false;
             $html['data'] = array();
-            $html['msg'] = "BKA System webhook live access has been unsuccessful!";
+            $html['msg'] = "Zerone Japan App webhook live access has been unsuccessful!";
             echo json_encode($html, true);
             die;
         }

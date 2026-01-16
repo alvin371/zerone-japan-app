@@ -116,7 +116,7 @@ if (!$_SESSION['is_login']) {
 
 
 
-  <link rel="shortcut icon" type="image/png" href="<?= base_url() ?>assets/img/fav.png">
+  <link rel="shortcut icon" type="image/png" href="<?= base_url() ?>assets/img/zerone-favicon.png">
 
   <link rel="stylesheet" href="<?= base_url() ?>assets/css/style.css?v=1.0.4" type="text/css" media="screen" />
 
@@ -124,9 +124,9 @@ if (!$_SESSION['is_login']) {
   if ($data[0]['img']) {
     $img = base_url() . '/assets/webfile/home/' . $data[0]['img'];
   } else {
-    $img = base_url() . '/assets/img/bka-logo.png';
+    $img = base_url() . '/assets/img/zerone-logo.png';
   }
-  $img = base_url() . '/assets/img/fav.png';
+  $img = base_url() . '/assets/img/zerone-favicon.png';
   ?>
   <meta property="og:image" content="<?= $img ?>" />
   <meta property="og:image:width" content="1000" />
@@ -539,7 +539,7 @@ if (!$_SESSION['is_login']) {
         <?php if ($can_view_dashboard): ?>
           <a href="<?= base_url() ?>">
         <?php endif; ?>
-            <img src="<?= base_url() ?>assets/img/bka-logo.png" alt="Logo" style="width:214px;padding-left:10px" />
+            <img src="<?= base_url() ?>assets/img/zerone-logo.png" alt="Logo" style="width:214px;padding-left:10px" />
         <?php if ($can_view_dashboard): ?>
           </a>
         <?php endif; ?>

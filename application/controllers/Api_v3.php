@@ -67,7 +67,7 @@ class Api_v3 extends CI_Controller
         $html = array();
         $html['status'] = true;
         $html['data'] = $dt;
-        $html['msg'] = "BKA System REST API access has been successful!";
+        $html['msg'] = "Zerone Japan App REST API access has been successful!";
         echo json_encode($html, true);
     }
 
