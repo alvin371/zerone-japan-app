@@ -8,81 +8,85 @@
     </div>
     <h4 class="text-white text-center mb-3" style="margin-top: -10px;">Create Account</h4>
     <form action="<?= base_url() ?>/auth/signup-process" id="signupForm" method="POST" class="text-white">
-       <div class="form-message"></div> 
-       
-      <!-- Full Name -->
-      <div class="col-lg-12 pt-2">
-        <label for="full_name" class="text-start">Full Name *</label>
-        <input name="full_name" id="full_name" type="text" class="form-control" placeholder="Enter your full name" required>
-        <small class="text-muted">Minimum 2 characters</small>
-      </div>
-      
-      <!-- Username -->
-      <div class="col-lg-12 pt-2">
-        <label for="username" class="text-start">Username *</label>
-        <input name="username" id="username" type="text" class="form-control" placeholder="Enter username (letters, numbers, underscore)" required>
-        <small class="text-muted">3-50 characters, alphanumeric and underscore only</small>
-      </div>
-      
-      <!-- Email -->
-      <div class="col-lg-12 pt-2">
-        <label for="email" class="text-start">Email Address *</label>
-        <input name="email" id="email" type="email" class="form-control" placeholder="Enter your email address" required>
-        <small class="text-muted">Valid email address required</small>
-      </div>
-      
-      <!-- Password -->
-      <div class="col-lg-12 pt-2">
-        <label for="password" class="text-start">Password *</label>
-        <div class="div-icon">
-          <div class="icon-right text-secondary" onclick="togglePassword('password', 'show_eye_1', 'hide_eye_1')">
-            <i class="bi bi-eye-slash" id="show_eye_1" style="display: block;"></i>
-            <i class="bi bi-eye" id="hide_eye_1" style="display: none;"></i>
+       <div class="form-message"></div>
+
+      <div class="row">
+        <!-- Left Column -->
+        <div class="col-md-6">
+          <!-- Full Name -->
+          <div class="pt-2">
+            <label for="full_name" class="text-start">Full Name *</label>
+            <input name="full_name" id="full_name" type="text" class="form-control" placeholder="Enter your full name" required>
+            <small class="text-muted">Minimum 2 characters</small>
           </div>
-          <input name="password" id="password" type="password" class="form-control" placeholder="Enter password" required>
-        </div>
-        <div class="password-requirements mt-2">
-          <small class="text-muted d-block">Password must contain:</small>
-          <small class="requirement" id="length">✗ At least 8 characters</small>
-          <small class="requirement" id="uppercase">✗ One uppercase letter (A-Z)</small>
-          <small class="requirement" id="lowercase">✗ One lowercase letter (a-z)</small>
-          <small class="requirement" id="number">✗ One number (0-9)</small>
-          <small class="requirement" id="special">✗ One special character (!@#$%^&*)</small>
-        </div>
-        <div class="password-strength mt-2">
-          <div class="strength-bar">
-            <div class="strength-fill" id="strengthFill"></div>
+
+          <!-- Username -->
+          <div class="pt-3">
+            <label for="username" class="text-start">Username *</label>
+            <input name="username" id="username" type="text" class="form-control" placeholder="Enter username (letters, numbers, underscore)" required>
+            <small class="text-muted">3-50 characters, alphanumeric and underscore only</small>
           </div>
-          <small class="strength-text" id="strengthText">Password strength: Very Weak</small>
+
+          <!-- Email -->
+          <div class="pt-3">
+            <label for="email" class="text-start">Email Address *</label>
+            <input name="email" id="email" type="email" class="form-control" placeholder="Enter your email address" required>
+            <small class="text-muted">Valid email address required</small>
+          </div>
+        </div>
+
+        <!-- Right Column -->
+        <div class="col-md-6">
+          <!-- Password -->
+          <div class="pt-2">
+            <label for="password" class="text-start">Password *</label>
+            <div class="div-icon">
+              <div class="icon-right text-secondary" onclick="togglePassword('password', 'show_eye_1', 'hide_eye_1')">
+                <i class="bi bi-eye-slash" id="show_eye_1" style="display: block;"></i>
+                <i class="bi bi-eye" id="hide_eye_1" style="display: none;"></i>
+              </div>
+              <input name="password" id="password" type="password" class="form-control" placeholder="Enter password" required>
+            </div>
+            <div class="password-requirements mt-2">
+              <small class="text-muted d-block">Password must contain:</small>
+              <small class="requirement" id="length">✗ At least 8 characters</small>
+              <small class="requirement" id="uppercase">✗ One uppercase letter (A-Z)</small>
+              <small class="requirement" id="lowercase">✗ One lowercase letter (a-z)</small>
+              <small class="requirement" id="number">✗ One number (0-9)</small>
+              <small class="requirement" id="special">✗ One special character (!@#$%^&*)</small>
+            </div>
+            <div class="password-strength mt-2">
+              <div class="strength-bar">
+                <div class="strength-fill" id="strengthFill"></div>
+              </div>
+              <small class="strength-text" id="strengthText">Password strength: Very Weak</small>
+            </div>
+          </div>
+
+          <!-- Confirm Password -->
+          <div class="pt-3">
+            <label for="confirm_password" class="text-start">Confirm Password *</label>
+            <div class="div-icon">
+              <div class="icon-right text-secondary" onclick="togglePassword('confirm_password', 'show_eye_2', 'hide_eye_2')">
+                <i class="bi bi-eye-slash" id="show_eye_2" style="display: block;"></i>
+                <i class="bi bi-eye" id="hide_eye_2" style="display: none;"></i>
+              </div>
+              <input name="confirm_password" id="confirm_password" type="password" class="form-control" placeholder="Confirm your password" required>
+            </div>
+            <small class="password-match" id="passwordMatch" style="display: none;"></small>
+          </div>
         </div>
       </div>
-      
-      <!-- Confirm Password -->
-      <div class="col-lg-12 pt-2">
-        <label for="confirm_password" class="text-start">Confirm Password *</label>
-        <div class="div-icon">
-          <div class="icon-right text-secondary" onclick="togglePassword('confirm_password', 'show_eye_2', 'hide_eye_2')">
-            <i class="bi bi-eye-slash" id="show_eye_2" style="display: block;"></i>
-            <i class="bi bi-eye" id="hide_eye_2" style="display: none;"></i>
-          </div>
-          <input name="confirm_password" id="confirm_password" type="password" class="form-control" placeholder="Confirm your password" required>
-        </div>
-        <small class="password-match" id="passwordMatch" style="display: none;"></small>
-      </div>
-      
+
       <!-- Submit Button -->
-      <div class="col-lg-12 mt-4">
-        <div class="row align-items-center">
-          <div class="col-12">
-            <button type="submit" class="btn text-white w-100 btn-send" style="background-color: #8666BC;" id="signupBtn" disabled>Create Account</button>
-          </div>
-        </div>
+      <div class="col-12 mt-4">
+        <button type="submit" class="btn text-white w-100 btn-send" style="background-color: #8666BC;" id="signupBtn" disabled>Create Account</button>
       </div>
-      
+
       <!-- Login Link -->
-      <div class="col-lg-12 mt-3 text-center">
+      <div class="col-12 mt-3 text-center">
         <small class="text-muted">
-          Already have an account? 
+          Already have an account?
           <a href="<?= base_url() ?>auth/login" class="text-white" style="text-decoration: underline;">Login here</a>
         </small>
       </div>
@@ -106,14 +110,14 @@
     -webkit-backdrop-filter: blur(8px);
     border-radius: 15px;
     padding: 30px;
-    min-height: 70vh;
-    min-width: 400px;
-    max-width: 500px;
+    min-width: 700px;
+    max-width: 800px;
   }
 
-  @media (max-width: 480px) {
+  @media (max-width: 768px) {
     .login-container {
       min-width: 330px;
+      max-width: 100%;
       padding: 20px;
     }
   }

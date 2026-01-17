@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+
+# Docker
+docker-compose.yml
+docker/
+Dockerfile
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+application/logs/*
+
+# Cache (will be created fresh in container)
+application/cache/*
+
+# Node (if any frontend build)
+node_modules/
+
+# Documentation
+*.md
+!CLAUDE.md
+
+# CI/CD
+.github/
+deploy/
