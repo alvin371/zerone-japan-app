@@ -18,12 +18,6 @@ COPY . /var/www/html
 RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 755 /var/www/html
 
-# Create .htaccess for CodeIgniter 3
-RUN echo 'RewriteEngine On\n\
-RewriteCond %{REQUEST_FILENAME} !-f\n\
-RewriteCond %{REQUEST_FILENAME} !-d\n\
-RewriteRule ^(.*)$ index.php/$1 [L]' > /var/www/html/.htaccess
-
 RUN echo '\
 <VirtualHost *:80>\n\
     ServerAdmin webmaster@localhost\n\
