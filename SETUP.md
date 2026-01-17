@@ -1,5 +1,66 @@
 # Setup Instructions
 
+## Option 1: Docker Compose (Recommended)
+
+The easiest way to run the application locally is using Docker Compose.
+
+### Prerequisites
+- Docker Desktop installed
+- Git
+
+### Quick Start
+
+1. **Clone and enter the project:**
+   ```bash
+   cd zerone-japan-app
+   ```
+
+2. **Copy environment file:**
+   ```bash
+   cp .env.example .env
+   ```
+
+3. **Start the containers:**
+   ```bash
+   docker-compose up -d
+   ```
+
+4. **Wait for services to be ready** (MySQL health check takes ~30 seconds)
+
+5. **Access the application:**
+   - **App**: http://localhost:8080
+   - **phpMyAdmin**: http://localhost:8081
+
+### Docker Commands
+
+```bash
+# Start services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f app
+
+# Stop services
+docker-compose down
+
+# Rebuild after Dockerfile changes
+docker-compose up -d --build
+
+# Reset database (removes all data)
+docker-compose down -v
+docker-compose up -d
+```
+
+### Database Setup
+
+1. Access phpMyAdmin at http://localhost:8081
+2. Import your database schema/dump
+3. Or add SQL to `docker/init.sql` and restart with `docker-compose down -v && docker-compose up -d`
+
+---
+
+## Option 2: XAMPP/MAMP (Traditional)
+
 ## Apache Configuration for Clean URLs
 
 To enable clean URLs (removing `index.php` from URLs), follow these steps:

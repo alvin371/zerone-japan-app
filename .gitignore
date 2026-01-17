@@ -1,0 +1,42 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+application/logs/*.php
+!application/logs/index.html
+
+# Cache
+application/cache/*
+!application/cache/index.html
+!application/cache/sessions/
+
+# Sessions
+application/cache/sessions/*
+!application/cache/sessions/index.html
+
+# Composer (optional - uncomment if you want to track vendor)
+# /vendor/
+
+# Node
+node_modules/
+
+# Docker volumes
+mysql_data/
+
+# Uploads (optional - uncomment if uploads shouldn't be tracked)
+# assets/uploads/*
+# !assets/uploads/.gitkeep

@@ -1,6 +1,67 @@
-# Credentials Directory
+# Zerone Japan App
 
-This directory contains sensitive credentials and configuration files for the application.
+A CodeIgniter 3 application for marketplace integration and business management.
+
+## Local Development with Docker
+
+### Prerequisites
+- Docker Desktop installed
+- Git
+
+### Quick Start
+
+```bash
+# 1. Copy environment file
+cp .env.example .env
+
+# 2. Start containers
+docker-compose up -d
+
+# 3. Wait ~30 seconds for MySQL to be ready, then access:
+#    - App: http://localhost:8080
+#    - phpMyAdmin: http://localhost:8081
+```
+
+### Docker Commands
+
+```bash
+# Start services in background
+docker-compose up -d
+
+# View application logs
+docker-compose logs -f app
+
+# Stop services
+docker-compose down
+
+# Rebuild after Dockerfile changes
+docker-compose up -d --build
+
+# Reset database (removes all data)
+docker-compose down -v && docker-compose up -d
+```
+
+### Database Setup
+
+1. Access phpMyAdmin at http://localhost:8081
+   - User: `zerone`
+   - Password: `zerone_password`
+2. Import your database schema/dump
+3. Or add SQL to `docker/init.sql` and restart with volume reset
+
+### Services
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| App | http://localhost:8080 | PHP/Apache application |
+| phpMyAdmin | http://localhost:8081 | Database management |
+| MySQL | localhost:3306 | Database server |
+
+---
+
+## Credentials & Configuration
+
+This section contains information about sensitive credentials and configuration files for the application.
 
 ## Files
 
