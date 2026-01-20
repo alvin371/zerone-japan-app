@@ -303,18 +303,39 @@ class Template
         ]);
 
         $response = curl_exec($curl);
+        $info = curl_getinfo($curl);
         $err = curl_error($curl);
         curl_close($curl);
+
+        $meta = [
+            "url" => $url,
+            "http_code" => $info['http_code'] ?? null,
+            "total_time" => isset($info['total_time']) ? round($info['total_time'], 3) : null,
+            "curl_error" => $err ?: null,
+            "response_snippet" => $this->shorten_text($response, 200),
+        ];
 
         if ($err) {
             return [
                 "status" => false,
                 "msg" => "cURL Error: $err",
-                "data" => []
+                "data" => [],
+                "__meta" => $meta
             ];
         }
 
-        return json_decode($response, true);
+        $decoded = json_decode($response, true);
+        if (!is_array($decoded)) {
+            return [
+                "status" => false,
+                "msg" => "Invalid JSON response",
+                "data" => [],
+                "__meta" => $meta
+            ];
+        }
+
+        $decoded["__meta"] = $meta;
+        return $decoded;
     }
 
     function getDataFromFirstEndpoint($username)
@@ -343,6 +364,83 @@ class Template
         ];
 
         return $this->curlRequest($url, $headers);
+    }
+
+    function shorten_text($text, $max = 160)
+    {
+        $text = (string) $text;
+        if (strlen($text) <= $max) {
+            return $text;
+        }
+
+        return substr($text, 0, $max - 3) . '...';
+    }
+
+    function sanitize_endpoint_response($response)
+    {
+        if (!is_array($response)) {
+            return [
+                "status" => null,
+                "message" => null,
+                "data_type" => gettype($response),
+                "data_count" => null,
+                "__meta" => null
+            ];
+        }
+
+        $data = $response['data'] ?? null;
+        return [
+            "status" => $response['status'] ?? null,
+            "message" => $response['message'] ?? ($response['msg'] ?? null),
+            "data_type" => gettype($data),
+            "data_count" => is_array($data) ? count($data) : null,
+            "__meta" => $response['__meta'] ?? null
+        ];
+    }
+
+    function log_endpoint_trace($event, $data = [])
+    {
+        $entry = [
+            "ts" => date('c'),
+            "event" => $event,
+            "data" => $data
+        ];
+
+        $path = APPPATH . 'logs/endpoint_trace.log';
+        @file_put_contents($path, json_encode($entry, JSON_UNESCAPED_SLASHES) . PHP_EOL, FILE_APPEND | LOCK_EX);
+    }
+
+    function format_endpoint_detail($label, $response, $missing = '')
+    {
+        $parts = array();
+
+        if (!is_array($response)) {
+            $parts[] = 'response tidak valid';
+        } else {
+            $status = $response['status'] ?? 'unknown';
+            $parts[] = 'status=' . $status;
+
+            $message = $response['message'] ?? ($response['msg'] ?? ($response['error'] ?? ''));
+            if ($message !== '') {
+                $message = htmlspecialchars($this->shorten_text($message), ENT_QUOTES, 'UTF-8');
+                $parts[] = 'message=' . $message;
+            }
+
+            if (!empty($response['code'])) {
+                $parts[] = 'code=' . $response['code'];
+            }
+
+            $data = $response['data'] ?? null;
+            if (empty($data)) {
+                $parts[] = 'data=kosong';
+            }
+        }
+
+        if ($missing !== '') {
+            $parts[] = 'missing=' . $missing;
+        }
+
+        return $label . ' (' . implode(', ', $parts) . ')';
     }
 
     function get_account_id($type, $url)
@@ -430,6 +528,7 @@ class Template
             $username = str_replace('@', '', $username);
 
             $resp1 = $this->getDataFromFirstEndpoint($username);
+            $resp2 = null;
             $isEmpty = true;
 
             if (isset($resp1['status']) && $resp1['status'] == 'Successful') {
@@ -487,10 +586,19 @@ class Template
                 }
             }
 
+            $detail_1 = $this->format_endpoint_detail('Endpoint 1: user/info', $resp1, 'uid');
+            $detail_2 = $this->format_endpoint_detail('Endpoint 2: search/users', $resp2, 'user_info');
+
+            $this->log_endpoint_trace('tiktok_user_not_found', [
+                "username" => $username,
+                "url" => $url,
+                "endpoint_1" => $this->sanitize_endpoint_response($resp1),
+                "endpoint_2" => $this->sanitize_endpoint_response($resp2)
+            ]);
 
             return [
                 "status" => false,
-                "msg" => "Username <b>$username</b> tidak ditemukan dari kedua endpoint",
+                "msg" => "Username <b>$username</b> tidak ditemukan dari kedua endpoint.<br><small>$detail_1<br>$detail_2</small>",
                 "data" => []
             ];
         } else {
@@ -588,7 +696,7 @@ class Template
 
             $response = json_decode($response, true);
 
-            if ($response['status'] == 'Successful') {
+            if ($response['status'] == 'Successful' && isset($response['data']) && is_array($response['data']) && count($response['data']) > 0) {
                 $response["status"] = true;
                 $response["msg"] = "Data ditemukan";
 
@@ -596,12 +704,12 @@ class Template
 
                 $arr = array();
                 foreach ($response['data'] as $k => $v) {
-                    $detail = $v['stats'];
-                    $arr[$k]["like"]    = intval($detail['diggCount']);
-                    $arr[$k]["share"]   = intval($detail['shareCount']);
-                    $arr[$k]["comment"] = intval($detail['commentCount']);
-                    $arr[$k]["collect"] = intval($detail['collectCount']);
-                    $arr[$k]["view"]    = intval($detail['playCount']);
+                    $detail = $v['stats'] ?? [];
+                    $arr[$k]["like"]    = intval($detail['diggCount'] ?? 0);
+                    $arr[$k]["share"]   = intval($detail['shareCount'] ?? 0);
+                    $arr[$k]["comment"] = intval($detail['commentCount'] ?? 0);
+                    $arr[$k]["collect"] = intval($detail['collectCount'] ?? 0);
+                    $arr[$k]["view"]    = intval($detail['playCount'] ?? 0);
                 }
                 $response["data"] = $arr;
             } else {
