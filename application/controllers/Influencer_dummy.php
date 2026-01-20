@@ -10,6 +10,8 @@ class Influencer_dummy extends CI_Controller {
         $this->load->helper('url');
         $this->load->library('session');
         $this->load->library('user_agent');
+        $this->load->model('mymodel');
+        $this->load->library('template');
     }
 
     public function index() 
