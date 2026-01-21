@@ -2,7 +2,11 @@
 $k = $start;
 
 foreach ($data as $v) {
-    $v['img'] = $v['img'] ? base_url() . 'assets/img/product/' . $v['img'] : base_url() . 'assets/img/icon/icon-no.png';
+    if (($v['source_table'] ?? 'product') === 'product_3rd') {
+        $v['img'] = $v['img'] ? base_url() . 'assets/img/product_3rd/' . $v['img'] : base_url() . 'assets/img/product_3rd/default.png';
+    } else {
+        $v['img'] = $v['img'] ? base_url() . 'assets/img/product/' . $v['img'] : base_url() . 'assets/img/icon/icon-no.png';
+    }
 
     $stock_display = $v['is_varian'] ? ($v['total_stock'] ?? 0) : $v['stock'];
     $has_variants = $v['is_varian'] && !empty($v['variants']);
@@ -10,7 +14,7 @@ foreach ($data as $v) {
     <tbody>
         <tr class="product-row" data-product-id="<?= $v['id'] ?>">
             <td style="width: 40px;">
-                <input class="form-check-input" type="checkbox" value="<?= $v['id'] ?>" data-id="<?= $k ?>" name="list_id" form="form-action">
+                <input class="form-check-input" type="checkbox" value="<?= $v['id'] ?>" data-id="<?= $k ?>" name="list_id" form="form-action" <?= !empty($v['is_synced']) ? 'disabled' : '' ?>>
             </td>
             <td style="width: 60px;">
                 <strong><?= $k + 1 ?></strong>
@@ -31,6 +35,9 @@ foreach ($data as $v) {
                     <div class="flex-grow-1">
                         <div>
                             <strong style="color: #1890ff; font-size: 14px;"><?= $v['name'] ?></strong>
+                            <?php if (!empty($v['is_synced'])): ?>
+                                <span class="badge bg-info ms-1">Synced</span>
+                            <?php endif; ?>
                         </div>
                         <div class="text-muted" style="font-size: 12px;">
                             <span>Brand: <?= $v['brand'] ?></span> | <span>SKU: <?= $v['sku'] ?></span>
@@ -62,34 +69,47 @@ foreach ($data as $v) {
             <?php if (in_array($user['role'], array('1', '3', '2', '6'))) { ?>
                 <td class="text-end" style="width: 120px;">
                     <div class="d-flex align-items-center justify-content-end gap-2">
-                        <?php if ($has_variants): ?>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input parent-toggle" type="checkbox"
-                                    id="status_switch_<?= $v['id'] ?>"
-                                    name="status_<?= $v['id'] ?>"
-                                    <?= ($v['status'] == 'Aktif') ? 'checked' : '' ?>
-                                    data-has-variants="true"
-                                    data-parent-id="<?= $v['id'] ?>"
-                                    onchange="updateParentStatus('<?= $v['id'] ?>', this.checked ? 'Aktif' : 'Tidak Aktif')">
-                            </div>
-                        <?php elseif (!$has_variants): ?>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox"
-                                    id="status_switch_<?= $v['id'] ?>"
-                                    name="status_<?= $v['id'] ?>"
-                                    <?= ($v['status'] == 'Aktif') ? 'checked' : '' ?>
-                                    onchange="updateStatus('<?= $v['id'] ?>', this.checked ? 'Aktif' : 'Tidak Aktif')">
-                            </div>
+                        <?php if (empty($v['is_synced'])): ?>
+                            <?php if ($has_variants): ?>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input parent-toggle" type="checkbox"
+                                        id="status_switch_<?= $v['id'] ?>"
+                                        name="status_<?= $v['id'] ?>"
+                                        <?= ($v['status'] == 'Aktif') ? 'checked' : '' ?>
+                                        data-has-variants="true"
+                                        data-parent-id="<?= $v['id'] ?>"
+                                        onchange="updateParentStatus('<?= $v['id'] ?>', this.checked ? 'Aktif' : 'Tidak Aktif')">
+                                </div>
+                            <?php elseif (!$has_variants): ?>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox"
+                                        id="status_switch_<?= $v['id'] ?>"
+                                        name="status_<?= $v['id'] ?>"
+                                        <?= ($v['status'] == 'Aktif') ? 'checked' : '' ?>
+                                        onchange="updateStatus('<?= $v['id'] ?>', this.checked ? 'Aktif' : 'Tidak Aktif')">
+                                </div>
+                            <?php endif; ?>
                         <?php endif; ?>
 
-                        <a href="#!" onclick="edit('<?= $v['id'] ?>')" title="Edit"
-                            style="color: #1890ff; font-size: 14px; text-decoration: none;">
-                            <i class="bi bi-pencil"></i>
-                        </a>
-                        <a href="#!" onclick="remove('<?= $v['id'] ?>')" title="Delete"
-                            style="color: #ff4d4f; font-size: 14px; text-decoration: none;">
-                            <i class="bi bi-trash"></i>
-                        </a>
+                        <?php if (!empty($v['is_synced'])): ?>
+                            <a href="#!" onclick="editSynced('<?= $v['id'] ?>')" title="Edit"
+                                style="color: #1890ff; font-size: 14px; text-decoration: none;">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <a href="#!" onclick="removeSynced('<?= $v['id'] ?>')" title="Delete"
+                                style="color: #ff4d4f; font-size: 14px; text-decoration: none;">
+                                <i class="bi bi-trash"></i>
+                            </a>
+                        <?php else: ?>
+                            <a href="#!" onclick="edit('<?= $v['id'] ?>')" title="Edit"
+                                style="color: #1890ff; font-size: 14px; text-decoration: none;">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <a href="#!" onclick="remove('<?= $v['id'] ?>')" title="Delete"
+                                style="color: #ff4d4f; font-size: 14px; text-decoration: none;">
+                                <i class="bi bi-trash"></i>
+                            </a>
+                        <?php endif; ?>
                     </div>
                 </td>
             <?php } ?>

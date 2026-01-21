@@ -68,53 +68,80 @@ class Product extends BaseController
             (
                 -- Count non-variant products
                 SELECT COUNT(*) FROM product p1
-                WHERE p1.is_operational = $is_operational
+                WHERE $qry
+                AND p1.is_operational = $is_operational
                 AND p1.is_varian = 0
                 AND (p1.parent_id = 0 OR p1.parent_id IS NULL)
             ) + (
                 -- Count variant products that have at least one variant
                 SELECT COUNT(*) FROM product p2
-                WHERE p2.is_operational = $is_operational
+                WHERE $qry
+                AND p2.is_operational = $is_operational
                 AND p2.is_varian = 1
                 AND (p2.parent_id = 0 OR p2.parent_id IS NULL)
                 AND EXISTS (SELECT 1 FROM product p3 WHERE p3.parent_id = p2.id)
+            ) + (
+                -- Count synced products
+                SELECT COUNT(*) FROM product_3rd p4
+                WHERE $qry
             ) AS total_all,
             (
                 -- Count non-variant active products
                 SELECT COUNT(*) FROM product p1
-                WHERE p1.is_operational = $is_operational
+                WHERE $qry
+                AND p1.is_operational = $is_operational
                 AND p1.is_varian = 0
                 AND (p1.parent_id = 0 OR p1.parent_id IS NULL)
                 AND p1.status = 'Aktif'
             ) + (
                 -- Count variant products that have at least one active variant
                 SELECT COUNT(*) FROM product p2
-                WHERE p2.is_operational = $is_operational
+                WHERE $qry
+                AND p2.is_operational = $is_operational
                 AND p2.is_varian = 1
                 AND (p2.parent_id = 0 OR p2.parent_id IS NULL)
                 AND EXISTS (SELECT 1 FROM product p3 WHERE p3.parent_id = p2.id AND p3.status = 'Aktif')
+            ) + (
+                -- Count synced active products
+                SELECT COUNT(*) FROM product_3rd p4
+                WHERE $qry
+                AND (p4.status = 'Aktif' OR p4.status = 'ENABLE')
             ) AS total_active,
             (
                 -- Count non-variant inactive products
                 SELECT COUNT(*) FROM product p1
-                WHERE p1.is_operational = $is_operational
+                WHERE $qry
+                AND p1.is_operational = $is_operational
                 AND p1.is_varian = 0
                 AND (p1.parent_id = 0 OR p1.parent_id IS NULL)
                 AND p1.status = 'Tidak Aktif'
             ) + (
                 -- Count variant products that have at least one inactive variant
                 SELECT COUNT(*) FROM product p2
-                WHERE p2.is_operational = $is_operational
+                WHERE $qry
+                AND p2.is_operational = $is_operational
                 AND p2.is_varian = 1
                 AND (p2.parent_id = 0 OR p2.parent_id IS NULL)
                 AND EXISTS (SELECT 1 FROM product p3 WHERE p3.parent_id = p2.id AND p3.status = 'Tidak Aktif')
+            ) + (
+                -- Count synced inactive products
+                SELECT COUNT(*) FROM product_3rd p4
+                WHERE $qry
+                AND (p4.status = 'Tidak Aktif' OR p4.status = 'DISABLE')
             ) AS total_inactive");
         
         $data['total_all'] = $count_query[0]['total_all'] ?? 0;
         $data['total_active'] = $count_query[0]['total_active'] ?? 0;
         $data['total_inactive'] = $count_query[0]['total_inactive'] ?? 0;
 
-        $query = $this->mymodel->selectWithQuery("SELECT COUNT(id) AS count FROM product WHERE $qry AND is_operational = $is_operational");
+        $query = $this->mymodel->selectWithQuery("SELECT
+            (
+                SELECT COUNT(id) FROM product
+                WHERE $qry AND is_operational = $is_operational
+            ) + (
+                SELECT COUNT(id) FROM product_3rd
+                WHERE $qry
+            ) AS count");
         $data['page'] = ceil($query[0]['count'] / 30);
         $data['notif'] = '<p class="mb-1"><label class="text-notif">' . $this->template->separator_only($query[0]['count']) . ' data ditemukan!</label></p>';
 
@@ -293,13 +320,19 @@ class Product extends BaseController
         $offset = max(0, ($current_page - 1) * $limit);
 
         $base_query = "
-            SELECT p.*, 
-            IF(p.is_varian = 1, 
-                (SELECT SUM(stock) FROM product WHERE parent_id = p.id AND status = 'Aktif'), 
-                p.stock
-            ) AS total_stock
-            FROM product p
-            WHERE $qry AND is_operational = 0 AND (parent_id = 0 OR parent_id IS NULL)
+            SELECT *
+            FROM (
+                SELECT p.id, p.name, p.sku, p.brand, p.marketplace, p.img,
+                    p.stock, p.is_varian, p.parent_id, p.status,
+                    p.price_buy, p.price_normal, p.price_reseller, p.price_distributor,
+                    IF(p.is_varian = 1,
+                        (SELECT SUM(stock) FROM product WHERE parent_id = p.id AND status = 'Aktif'),
+                        p.stock
+                    ) AS total_stock,
+                    0 AS is_synced,
+                    'product' AS source_table
+                FROM product p
+                WHERE $qry AND p.is_operational = 0 AND (p.parent_id = 0 OR p.parent_id IS NULL)
         ";
 
         if ($status === 'active') {
@@ -308,11 +341,37 @@ class Product extends BaseController
             $base_query .= " AND (p.status = 'Tidak Aktif' OR p.is_varian = 1)";
         }
 
-        $base_query .= " ORDER BY $sort $order LIMIT $offset, $limit";
+        $base_query .= "
+                UNION ALL
+                SELECT p3.id, p3.name, p3.sku, p3.brand, p3.marketplace, p3.img,
+                    0 AS stock, 0 AS is_varian, 0 AS parent_id, p3.status,
+                    p3.price_buy, p3.price_normal, p3.price_reseller, p3.price_distributor,
+                    0 AS total_stock,
+                    1 AS is_synced,
+                    'product_3rd' AS source_table
+                FROM product_3rd p3
+                WHERE $qry
+        ";
+
+        if ($status === 'active') {
+            $base_query .= " AND (p3.status = 'Aktif' OR p3.status = 'ENABLE')";
+        } elseif ($status === 'inactive') {
+            $base_query .= " AND (p3.status = 'Tidak Aktif' OR p3.status = 'DISABLE')";
+        }
+
+        $base_query .= "
+            ) AS combined
+            ORDER BY $sort $order
+            LIMIT $offset, $limit
+        ";
 
         $query = $this->mymodel->selectWithQuery($base_query);
 
         foreach ($query as &$product) {
+            if ($product['source_table'] !== 'product') {
+                continue;
+            }
+
             if ($product['is_varian']) {
                 $variant_query = "SELECT * FROM product WHERE parent_id = {$product['id']}";
                 
@@ -328,8 +387,7 @@ class Product extends BaseController
                 
                 if ($status === 'active' && empty($product['variants'])) {
                     $product = null;
-                }
-                elseif ($status === 'inactive' && empty($product['variants'])) {
+                } elseif ($status === 'inactive' && empty($product['variants'])) {
                     $product = null;
                 }
             } else {
