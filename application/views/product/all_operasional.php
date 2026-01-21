@@ -413,6 +413,22 @@
         $("#load-form").load("<?= base_url() ?>/product/edit?p=operasional&id=" + id);
     }
 
+    function editSynced(id) {
+        $("#load-form").html('Loading...');
+        $("#modal-form").modal('show');
+        $("#modal-dialog").addClass("modal-xl");
+        $("#title-form").html('Edit Data');
+        $("#load-form").load("<?= base_url() ?>/product-3rd/edit?id=" + id);
+    }
+
+    function removeSynced(id) {
+        $("#load-form").html('Loading...');
+        $("#modal-form").modal('show');
+        $("#modal-dialog").removeClass("modal-xl modal-lg");
+        $("#title-form").html('Hapus Data');
+        $("#load-form").load("<?= base_url() ?>/product-3rd/remove?id=" + id);
+    }
+
     function hapus_data(id) {
         showModal('Hapus Data', `<?= base_url() ?>/product/action?code=hapus_data&id=${id}`);
     }
