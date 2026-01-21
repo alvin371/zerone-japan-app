@@ -194,7 +194,7 @@ class Migrate extends CI_Controller
             }
 
             // Remove from migrations table
-            $this->db->delete('migrations', ['migration' => $name]);
+            $this->db->delete('app_migrations', ['migration' => $name]);
 
             echo json_encode([
                 'status' => true,
@@ -238,11 +238,11 @@ class Migrate extends CI_Controller
     private function _get_executed_migrations()
     {
         // Check if migrations table exists
-        if (!$this->db->table_exists('migrations')) {
+        if (!$this->db->table_exists('app_migrations')) {
             return [];
         }
 
-        $query = $this->db->select('migration')->get('migrations');
+        $query = $this->db->select('migration')->get('app_migrations');
         $result = $query->result_array();
 
         return array_column($result, 'migration');
@@ -253,25 +253,28 @@ class Migrate extends CI_Controller
      */
     private function _get_migration_date($name)
     {
-        if (!$this->db->table_exists('migrations')) {
+        if (!$this->db->table_exists('app_migrations')) {
             return null;
         }
 
         $query = $this->db->select('executed_at')
             ->where('migration', $name)
-            ->get('migrations');
+            ->get('app_migrations');
 
         $row = $query->row_array();
         return $row ? $row['executed_at'] : null;
     }
 
     /**
-     * Ensure migrations table exists
+     * Ensure migrations table exists with correct schema
      */
     private function _ensure_migrations_table()
     {
-        if (!$this->db->table_exists('migrations')) {
-            $sql = "CREATE TABLE `migrations` (
+        // Use a different table name to avoid conflicts with CI's built-in migrations
+        $table_name = 'app_migrations';
+
+        if (!$this->db->table_exists($table_name)) {
+            $sql = "CREATE TABLE `$table_name` (
                 `id` INT(11) NOT NULL AUTO_INCREMENT,
                 `migration` VARCHAR(255) NOT NULL,
                 `executed_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -309,7 +312,7 @@ class Migrate extends CI_Controller
             }
 
             // Record migration as executed
-            $this->db->insert('migrations', [
+            $this->db->insert('app_migrations', [
                 'migration' => $name,
                 'executed_at' => date('Y-m-d H:i:s')
             ]);
