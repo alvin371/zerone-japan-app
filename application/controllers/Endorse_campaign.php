@@ -252,7 +252,7 @@ class Endorse_campaign extends BaseController
         $pic_cache_key = 'endorse_campaign_pic_users';
         $pic_data = $this->cache->get($pic_cache_key);
         if (!$pic_data) {
-            $pic_data = $this->mymodel->selectWithQuery("SELECT * FROM user WHERE role IN ('1', '2', '11') ORDER BY full_name ASC");
+            $pic_data = $this->mymodel->selectWithQuery("SELECT * FROM user ORDER BY full_name ASC");
             $this->cache->save($pic_cache_key, $pic_data, 30); // Cache for 30 seconds
         }
         $data['pic'] = $pic_data;
@@ -261,7 +261,7 @@ class Endorse_campaign extends BaseController
         $spv_cache_key = 'endorse_campaign_spv_users';
         $spv_data = $this->cache->get($spv_cache_key);
         if (!$spv_data) {
-            $spv_data = $this->mymodel->selectWithQuery("SELECT * FROM user WHERE role IN ('1', '2', '11') ORDER BY full_name ASC");
+            $spv_data = $this->mymodel->selectWithQuery("SELECT * FROM user ORDER BY full_name ASC");
             $this->cache->save($spv_cache_key, $spv_data, 30); 
         }
         $data['spv'] = $spv_data;
@@ -597,7 +597,7 @@ class Endorse_campaign extends BaseController
         $pic_cache_key = 'endorse_campaign_pic_users';
         $pic_data = $this->cache->get($pic_cache_key);
         if (!$pic_data) {
-            $pic_data = $this->mymodel->selectWithQuery("SELECT * FROM user WHERE role IN ('1', '2', '11') ORDER BY full_name ASC");
+            $pic_data = $this->mymodel->selectWithQuery("SELECT * FROM user ORDER BY full_name ASC");
             $this->cache->save($pic_cache_key, $pic_data, 30); // Cache for 30 seconds
         }
         $data['pic'] = $pic_data;
@@ -606,7 +606,7 @@ class Endorse_campaign extends BaseController
         $spv_cache_key = 'endorse_campaign_spv_users';
         $spv_data = $this->cache->get($spv_cache_key);
         if (!$spv_data) {
-            $spv_data = $this->mymodel->selectWithQuery("SELECT * FROM user WHERE role IN ('1', '2', '11') ORDER BY full_name ASC");
+            $spv_data = $this->mymodel->selectWithQuery("SELECT * FROM user ORDER BY full_name ASC");
             $this->cache->save($spv_cache_key, $spv_data, 30); 
         }
         $data['spv'] = $spv_data;
