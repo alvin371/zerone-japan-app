@@ -38,27 +38,41 @@ class Product extends BaseController
         $data['brands'] = $this->mymodel->selectWithQuery("SELECT * FROM brand WHERE status = 'ENABLE' ORDER BY name ASC");
         $data['order_status'] = $this->mymodel->selectWithQuery("SELECT DISTINCT order_status FROM stock WHERE order_status != '' ORDER BY order_status ASC");
 
-        $qry = "1=1";
-        if ($brand) $qry .= " AND brand = '$brand'";
-        if ($marketplace) $qry .= " AND marketplace = '$marketplace'";
+        $qry_base_product = "1=1";
+        $qry_base_synced = "1=1";
+        if ($brand) {
+            $qry_base_product .= " AND brand = '$brand'";
+            $qry_base_synced .= " AND brand = '$brand'";
+        }
+        if ($marketplace) {
+            $qry_base_synced .= " AND marketplace = '$marketplace'";
+        }
         if ($keyword) {
             switch ($data['keyword_category']) {
                 case "Nama Produk":
-                    $qry .= " AND name LIKE '%$keyword%'";
+                    $qry_base_product .= " AND name LIKE '%$keyword%'";
+                    $qry_base_synced .= " AND name LIKE '%$keyword%'";
                     break;
                 case "SKU":
-                    $qry .= " AND sku LIKE '%$keyword%'";
+                    $qry_base_product .= " AND sku LIKE '%$keyword%'";
+                    $qry_base_synced .= " AND sku LIKE '%$keyword%'";
                     break;
                 case "Brand":
-                    $qry .= " AND brand LIKE '%$keyword%'";
+                    $qry_base_product .= " AND brand LIKE '%$keyword%'";
+                    $qry_base_synced .= " AND brand LIKE '%$keyword%'";
                     break;
             }
         }
 
+        $qry_product = $qry_base_product;
+        $qry_synced = $qry_base_synced;
+
         if ($status === 'active') {
-            $qry .= " AND status = 'Aktif'";
+            $qry_product .= " AND status = 'Aktif'";
+            $qry_synced .= " AND (status = 'Aktif' OR status = 'ENABLE')";
         } elseif ($status === 'inactive') {
-            $qry .= " AND status = 'Tidak Aktif'";
+            $qry_product .= " AND status = 'Tidak Aktif'";
+            $qry_synced .= " AND (status = 'Tidak Aktif' OR status = 'DISABLE')";
         }
 
         $is_operational = ($_GET['p'] ?? '') === "operasional" ? 1 : 0;
@@ -68,14 +82,14 @@ class Product extends BaseController
             (
                 -- Count non-variant products
                 SELECT COUNT(*) FROM product p1
-                WHERE $qry
+                WHERE $qry_base_product
                 AND p1.is_operational = $is_operational
                 AND p1.is_varian = 0
                 AND (p1.parent_id = 0 OR p1.parent_id IS NULL)
             ) + (
                 -- Count variant products that have at least one variant
                 SELECT COUNT(*) FROM product p2
-                WHERE $qry
+                WHERE $qry_base_product
                 AND p2.is_operational = $is_operational
                 AND p2.is_varian = 1
                 AND (p2.parent_id = 0 OR p2.parent_id IS NULL)
@@ -83,12 +97,12 @@ class Product extends BaseController
             ) + (
                 -- Count synced products
                 SELECT COUNT(*) FROM product_3rd p4
-                WHERE $qry
+                WHERE $qry_base_synced
             ) AS total_all,
             (
                 -- Count non-variant active products
                 SELECT COUNT(*) FROM product p1
-                WHERE $qry
+                WHERE $qry_base_product
                 AND p1.is_operational = $is_operational
                 AND p1.is_varian = 0
                 AND (p1.parent_id = 0 OR p1.parent_id IS NULL)
@@ -96,7 +110,7 @@ class Product extends BaseController
             ) + (
                 -- Count variant products that have at least one active variant
                 SELECT COUNT(*) FROM product p2
-                WHERE $qry
+                WHERE $qry_base_product
                 AND p2.is_operational = $is_operational
                 AND p2.is_varian = 1
                 AND (p2.parent_id = 0 OR p2.parent_id IS NULL)
@@ -104,13 +118,13 @@ class Product extends BaseController
             ) + (
                 -- Count synced active products
                 SELECT COUNT(*) FROM product_3rd p4
-                WHERE $qry
+                WHERE $qry_base_synced
                 AND (p4.status = 'Aktif' OR p4.status = 'ENABLE')
             ) AS total_active,
             (
                 -- Count non-variant inactive products
                 SELECT COUNT(*) FROM product p1
-                WHERE $qry
+                WHERE $qry_base_product
                 AND p1.is_operational = $is_operational
                 AND p1.is_varian = 0
                 AND (p1.parent_id = 0 OR p1.parent_id IS NULL)
@@ -118,7 +132,7 @@ class Product extends BaseController
             ) + (
                 -- Count variant products that have at least one inactive variant
                 SELECT COUNT(*) FROM product p2
-                WHERE $qry
+                WHERE $qry_base_product
                 AND p2.is_operational = $is_operational
                 AND p2.is_varian = 1
                 AND (p2.parent_id = 0 OR p2.parent_id IS NULL)
@@ -126,7 +140,7 @@ class Product extends BaseController
             ) + (
                 -- Count synced inactive products
                 SELECT COUNT(*) FROM product_3rd p4
-                WHERE $qry
+                WHERE $qry_base_synced
                 AND (p4.status = 'Tidak Aktif' OR p4.status = 'DISABLE')
             ) AS total_inactive");
         
@@ -137,10 +151,10 @@ class Product extends BaseController
         $query = $this->mymodel->selectWithQuery("SELECT
             (
                 SELECT COUNT(id) FROM product
-                WHERE $qry AND is_operational = $is_operational
+                WHERE $qry_product AND is_operational = $is_operational
             ) + (
                 SELECT COUNT(id) FROM product_3rd
-                WHERE $qry
+                WHERE $qry_synced
             ) AS count");
         $data['page'] = ceil($query[0]['count'] / 30);
         $data['notif'] = '<p class="mb-1"><label class="text-notif">' . $this->template->separator_only($query[0]['count']) . ' data ditemukan!</label></p>';
@@ -283,26 +297,31 @@ class Product extends BaseController
         $brand = $_GET['brand'] ?? null;
         $marketplace = $_GET['marketplace'] ?? null;
 
-        $qry = "1=1";
+        $qry_product = "1=1";
+        $qry_synced = "1=1";
 
         if ($brand) {
-            $qry .= " AND brand = '$brand'";
+            $qry_product .= " AND brand = '$brand'";
+            $qry_synced .= " AND brand = '$brand'";
         }
 
         if ($marketplace) {
-            $qry .= " AND marketplace = '$marketplace'";
+            $qry_synced .= " AND marketplace = '$marketplace'";
         }
 
         if ($keyword) {
             switch ($keyword_category) {
                 case "Nama Produk":
-                    $qry .= " AND name LIKE '%$keyword%'";
+                    $qry_product .= " AND name LIKE '%$keyword%'";
+                    $qry_synced .= " AND name LIKE '%$keyword%'";
                     break;
                 case "SKU":
-                    $qry .= " AND sku LIKE '%$keyword%'";
+                    $qry_product .= " AND sku LIKE '%$keyword%'";
+                    $qry_synced .= " AND sku LIKE '%$keyword%'";
                     break;
                 case "Brand":
-                    $qry .= " AND brand LIKE '%$keyword%'";
+                    $qry_product .= " AND brand LIKE '%$keyword%'";
+                    $qry_synced .= " AND brand LIKE '%$keyword%'";
                     break;
             }
         }
@@ -322,7 +341,7 @@ class Product extends BaseController
         $base_query = "
             SELECT *
             FROM (
-                SELECT p.id, p.name, p.sku, p.brand, p.marketplace, p.img,
+                SELECT p.id, p.name, p.sku, p.brand, NULL AS marketplace, p.img,
                     p.stock, p.is_varian, p.parent_id, p.status,
                     p.price_buy, p.price_normal, p.price_reseller, p.price_distributor,
                     IF(p.is_varian = 1,
@@ -332,7 +351,7 @@ class Product extends BaseController
                     0 AS is_synced,
                     'product' AS source_table
                 FROM product p
-                WHERE $qry AND p.is_operational = 0 AND (p.parent_id = 0 OR p.parent_id IS NULL)
+                WHERE $qry_product AND p.is_operational = 0 AND (p.parent_id = 0 OR p.parent_id IS NULL)
         ";
 
         if ($status === 'active') {
@@ -350,7 +369,7 @@ class Product extends BaseController
                     1 AS is_synced,
                     'product_3rd' AS source_table
                 FROM product_3rd p3
-                WHERE $qry
+                WHERE $qry_synced
         ";
 
         if ($status === 'active') {
