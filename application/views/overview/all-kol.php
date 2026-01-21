@@ -311,11 +311,20 @@ if ($_GET['type'] == "Yearly") {
                                     if (!is_array($selected_products)) { $selected_products = [$selected_products]; }
                                     foreach (($product_options ?? []) as $opt) :
                                         $pid = is_array($opt) ? ($opt['id'] ?? '') : ($opt->id ?? '');
+                                        $source = is_array($opt) ? ($opt['source_table'] ?? 'product') : ($opt->source_table ?? 'product');
+                                        $value = $source . ':' . $pid;
                                         $pname = is_array($opt) ? ($opt['name'] ?? '') : ($opt->name ?? '');
-                                        if ($pid === '' || $pname === '') continue;
-                                        $sel = in_array((string)$pid, array_map('strval', $selected_products)) ? 'selected' : '';
+                                        if ($pname === '') continue;
+                                        $label = $pname;
+                                        $sku = is_array($opt) ? ($opt['sku'] ?? '') : ($opt->sku ?? '');
+                                        $brand = is_array($opt) ? ($opt['brand'] ?? '') : ($opt->brand ?? '');
+                                        $marketplace = is_array($opt) ? ($opt['marketplace'] ?? '') : ($opt->marketplace ?? '');
+                                        if ($sku !== '') { $label .= ' | ' . $sku; }
+                                        if ($brand !== '') { $label .= ' | ' . $brand; }
+                                        if ($source === 'product_3rd' && $marketplace !== '') { $label .= ' (Synced ' . $marketplace . ')'; }
+                                        $sel = in_array((string)$value, array_map('strval', $selected_products)) || in_array((string)$pid, array_map('strval', $selected_products)) ? 'selected' : '';
                                     ?>
-                                        <option <?= $sel ?> value="<?= htmlspecialchars($pid, ENT_QUOTES) ?>"><?= htmlspecialchars($pname) ?></option>
+                                        <option <?= $sel ?> value="<?= htmlspecialchars($value, ENT_QUOTES) ?>"><?= htmlspecialchars($label) ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>

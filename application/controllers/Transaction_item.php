@@ -163,9 +163,26 @@ class Transaction_item extends CI_Controller
         $product_cache_key = 'transaction_item_products_active';
         $query = $this->cache->get($product_cache_key);
         if (!$query) {
-            $query = $this->mymodel->selectWithQuery("SELECT * FROM product WHERE status = 'Aktif' AND is_varian = 0
-            ORDER BY sku ASC
-            ");
+            $query = $this->mymodel->get_product_dropdown_list(array(
+                'status' => array('Aktif', 'ENABLE'),
+                'order' => 'sku'
+            ));
+            foreach ($query as $k => $v) {
+                $source = $v['source_table'] ?? 'product';
+                $value = $source . ':' . $v['id'];
+                $label = $v['name'] ?? '';
+                if (!empty($v['sku'])) {
+                    $label .= ' | ' . $v['sku'];
+                }
+                if (!empty($v['brand'])) {
+                    $label .= ' | ' . $v['brand'];
+                }
+                if ($source === 'product_3rd' && !empty($v['marketplace'])) {
+                    $label .= ' (Synced ' . $v['marketplace'] . ')';
+                }
+                $query[$k]['value'] = $value;
+                $query[$k]['opt'] = $label;
+            }
             $this->cache->save($product_cache_key, $query, 30); // Cache for 30 seconds
         }
         $data['product'] = $query;
@@ -612,9 +629,9 @@ class Transaction_item extends CI_Controller
         FROM shipping
         ORDER BY name ASC");
 
-        $data['product'] = $this->mymodel->selectWithQuery("SELECT *
-        FROM product
-        ORDER BY name ASC");
+        $data['product'] = $this->mymodel->get_product_dropdown_list(array(
+            'order' => 'name'
+        ));
 
         $data['cs'] = $this->mymodel->selectWithQuery("SELECT *
         FROM user
@@ -717,7 +734,17 @@ class Transaction_item extends CI_Controller
     {
         $dt = $_POST;
         $id = $dt['id'];
-        $id_product = $dt['product'];
+        $raw_product = trim(strval($dt['product']));
+        $product_source = 'product';
+        $id_product = $raw_product;
+        if ($raw_product !== '' && strpos($raw_product, ':') !== false) {
+            $parts = explode(':', $raw_product, 2);
+            if (in_array($parts[0], array('product', 'product_3rd'), true)) {
+                $product_source = $parts[0];
+                $id_product = $parts[1] ?? '';
+            }
+        }
+        $product_key = $raw_product !== '' ? $raw_product : $id_product;
 
 
 
@@ -736,32 +763,43 @@ class Transaction_item extends CI_Controller
         $text = "";
         $total = 0;
 
-        $query = $this->mymodel->selectWithQuery("SELECT * FROM product WHERE id = '$id_product' ");
-
-        $product = $query[0];
+        if ($product_source === 'product_3rd') {
+            $product = $this->mymodel->selectDataOne('product_3rd', array('id' => $id_product));
+        } else {
+            $product = $this->mymodel->selectDataOne('product', array('id' => $id_product));
+        }
 
         if (empty($product)) {
             die;
         }
 
-        if ($json[$id_product]) {
-            $json[$id_product]['product'] = $dt['product'];
-            $json[$id_product]['sku'] = $product['sku'];
-            $json[$id_product]['product_text'] = $product['name'];
-            $json[$id_product]['brand'] = $product['brand'];
-            $json[$id_product]['brand_text'] = $product['brand_text'];
-            $json[$id_product]['qty'] = $json[$id_product]['qty'] + 1;
-            $json[$id_product]['price'] = $product['price_normal'];
-            $json[$id_product]['price_total'] = ($json[$id_product]['qty'] + 1) * $product['price_normal'];
+        $fallback_product = null;
+        if ($product_source === 'product_3rd' && !empty($product['sku'])) {
+            $fallback_product = $this->mymodel->selectDataOne('product', array('sku' => $product['sku'], 'is_varian' => 0));
+        }
+
+        $price_normal = $product['price_normal'] ?? ($fallback_product['price_normal'] ?? 0);
+
+        if (isset($json[$product_key])) {
+            $json[$product_key]['product'] = $product_key;
+            $json[$product_key]['product_source'] = $product_source;
+            $json[$product_key]['sku'] = $product['sku'] ?? '';
+            $json[$product_key]['product_text'] = $product['name'] ?? '';
+            $json[$product_key]['brand'] = $product['brand'] ?? '';
+            $json[$product_key]['brand_text'] = $product['brand_text'] ?? '';
+            $json[$product_key]['qty'] = $json[$product_key]['qty'] + 1;
+            $json[$product_key]['price'] = $price_normal;
+            $json[$product_key]['price_total'] = ($json[$product_key]['qty'] + 1) * $price_normal;
         } else {
-            $json[$id_product]['product'] = $dt['product'];
-            $json[$id_product]['sku'] = $product['sku'];
-            $json[$id_product]['product_text'] = $product['name'];
-            $json[$id_product]['brand'] = $product['brand'];
-            $json[$id_product]['brand_text'] = $product['brand_text'];
-            $json[$id_product]['qty'] = 1;
-            $json[$id_product]['price'] = $product['price_normal'];
-            $json[$id_product]['price_total'] = 1 * $product['price_normal'];
+            $json[$product_key]['product'] = $product_key;
+            $json[$product_key]['product_source'] = $product_source;
+            $json[$product_key]['sku'] = $product['sku'] ?? '';
+            $json[$product_key]['product_text'] = $product['name'] ?? '';
+            $json[$product_key]['brand'] = $product['brand'] ?? '';
+            $json[$product_key]['brand_text'] = $product['brand_text'] ?? '';
+            $json[$product_key]['qty'] = 1;
+            $json[$product_key]['price'] = $price_normal;
+            $json[$product_key]['price_total'] = 1 * $price_normal;
         }
 
         $price_total = 0;
@@ -1312,9 +1350,9 @@ class Transaction_item extends CI_Controller
         FROM shipping
         ORDER BY name ASC");
 
-        $data['product'] = $this->mymodel->selectWithQuery("SELECT *
-        FROM product
-        ORDER BY name ASC");
+        $data['product'] = $this->mymodel->get_product_dropdown_list(array(
+            'order' => 'name'
+        ));
 
         $data['content'] = $this->load->view("transaction_item/create", $data, true);
         $this->load->view("TemplateDashboard", $data);

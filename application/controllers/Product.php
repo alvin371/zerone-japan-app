@@ -364,7 +364,7 @@ class Product extends BaseController
                 UNION ALL
                 SELECT p3.id, p3.name, p3.sku, p3.brand, p3.marketplace, p3.img,
                     0 AS stock, 0 AS is_varian, 0 AS parent_id, p3.status,
-                    p3.price_buy, p3.price_normal, p3.price_reseller, p3.price_distributor,
+                    NULL AS price_buy, p3.price_normal, NULL AS price_reseller, NULL AS price_distributor,
                     0 AS total_stock,
                     1 AS is_synced,
                     'product_3rd' AS source_table

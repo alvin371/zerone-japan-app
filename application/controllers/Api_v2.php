@@ -3420,6 +3420,10 @@ class Api_v2 extends CI_Controller
                         }
 
                         $item = $v2['skus'];
+                        $price_normal = $this->_extract_price_from_skus($item);
+                        if ($price_normal !== null) {
+                            $dt['price_normal'] = $price_normal;
+                        }
                         $item_list = array();
                         if (empty($item)) {
                             $varian['sku'] = '';
@@ -4091,6 +4095,62 @@ class Api_v2 extends CI_Controller
         ]);
     }
 
+    private function _extract_price_from_skus($skus)
+    {
+        if (!is_array($skus)) {
+            return null;
+        }
+
+        $prices = array();
+        foreach ($skus as $sku) {
+            if (!is_array($sku)) {
+                continue;
+            }
+
+            $candidates = array();
+
+            if (isset($sku['price'])) {
+                if (is_array($sku['price'])) {
+                    $candidates[] = $sku['price']['sale_price'] ?? null;
+                    $candidates[] = $sku['price']['original_price'] ?? null;
+                } else {
+                    $candidates[] = $sku['price'];
+                }
+            }
+
+            $candidates[] = $sku['sale_price'] ?? null;
+            $candidates[] = $sku['original_price'] ?? null;
+            $candidates[] = $sku['discounted_price'] ?? null;
+            $candidates[] = $sku['special_price'] ?? null;
+            $candidates[] = $sku['sales_price'] ?? null;
+            $candidates[] = $sku['model_discounted_price'] ?? null;
+            $candidates[] = $sku['model_original_price'] ?? null;
+            $candidates[] = $sku['item_price'] ?? null;
+            $candidates[] = $sku['price_original'] ?? null;
+
+            foreach ($candidates as $value) {
+                if ($value === null || $value === '') {
+                    continue;
+                }
+                if (is_string($value)) {
+                    $value = str_replace(',', '', $value);
+                }
+                if (is_numeric($value)) {
+                    $value = floatval($value);
+                    if ($value > 0) {
+                        $prices[] = $value;
+                    }
+                }
+            }
+        }
+
+        if (empty($prices)) {
+            return null;
+        }
+
+        return min($prices);
+    }
+
     /**
      * Process TikTok products chunk
      */
@@ -4208,6 +4268,10 @@ class Api_v2 extends CI_Controller
                 'shop_name' => $shop_name,
                 'shop_id' => $shop_id
             ];
+            $price_normal = $this->_extract_price_from_skus($v2['skus'] ?? array());
+            if ($price_normal !== null) {
+                $dt['price_normal'] = $price_normal;
+            }
 
             // Download image with timeout
             $img_url = $v2['main_images'][0]['thumb_urls'][0] ?? '';
@@ -4468,6 +4532,11 @@ class Api_v2 extends CI_Controller
                 $item = $model_response['response']['model'] ?? [];
             }
 
+            $price_normal = $this->_extract_price_from_skus($item);
+            if ($price_normal !== null) {
+                $dt['price_normal'] = $price_normal;
+            }
+
             // Process variants
             $item_list = [];
             if (empty($item)) {
@@ -4622,6 +4691,10 @@ class Api_v2 extends CI_Controller
 
             // Process SKUs/variants
             $item = $v2['skus'] ?? [];
+            $price_normal = $this->_extract_price_from_skus($item);
+            if ($price_normal !== null) {
+                $dt['price_normal'] = $price_normal;
+            }
             $item_list = [];
             if (empty($item)) {
                 $varian = [

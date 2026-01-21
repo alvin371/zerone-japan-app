@@ -27,12 +27,24 @@
 		<select type="text" class="form-control" name="dt[product]">
 			<?php
 			foreach ($product as $k2 => $v2) {
+				$source = $v2['source_table'] ?? 'product';
+				$value = $source . ':' . $v2['id'];
+				$label = $v2['name'] ?? '';
+				if (!empty($v2['sku'])) {
+					$label .= ' | ' . $v2['sku'];
+				}
+				if (!empty($v2['brand'])) {
+					$label .= ' | ' . $v2['brand'];
+				}
+				if ($source === 'product_3rd' && !empty($v2['marketplace'])) {
+					$label .= ' (Synced ' . $v2['marketplace'] . ')';
+				}
 				$text = '';
-				if ($data['product'] == $v2['id']) {
+				if ($data['product'] == $v2['id'] || $data['product'] == $value) {
 					$text = 'selected';
 				}
 			?>
-				<option <?= $text ?> value="<?= $v2['id'] ?>"><?= $v2['name'] ?></option>
+				<option <?= $text ?> value="<?= $value ?>"><?= $label ?></option>
 			<?php } ?>
 		</select>
 	</div>

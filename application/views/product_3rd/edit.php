@@ -73,12 +73,18 @@
 							<select class="form-control" data-id="<?= $k ?>" type="text" name="dtt[<?=$vi['id']?>][<?= $k ?>][product]" id="product-<?= $k ?>">
 								<?php
 								foreach ($product as $k2 => $v2) {
+									$source = $v2['source_table'] ?? 'product';
+									$value = $source . ':' . $v2['id'];
+									$label = $v2['sku'] . ' | ' . $v2['name'];
+									if ($source === 'product_3rd' && !empty($v2['marketplace'])) {
+										$label .= ' (Synced ' . $v2['marketplace'] . ')';
+									}
 									$text = '';
-									if ($v['product'] == $v2['id']) {
+									if ($v['product'] == $v2['id'] || $v['product'] == $value) {
 										$text = 'selected';
 									}
 								?>
-									<option <?= $text ?> value="<?= $v2['id'] ?>"><?= $v2['sku'] ?> | <?= $v2['name'] ?></option>
+									<option <?= $text ?> value="<?= $value ?>"><?= $label ?></option>
 								<?php } ?>
 							</select>
 						</td>

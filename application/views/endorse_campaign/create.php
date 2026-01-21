@@ -54,9 +54,24 @@
             <label>Produk</label>
             <select class="form-control select2" id="product-select" multiple>
                 <?php foreach ($produk as $v): ?>
-                    <?php $selected = in_array($v['id'], explode(',', $data['product'] ?? '')) ? 'selected' : ''; ?>
-                    <option <?= $selected ?> value="<?= $v['id'] ?>" data-product_text="<?= htmlspecialchars($v['name']) ?>">
-                        <?= htmlspecialchars($v['name']) ?>
+                    <?php
+                        $source = $v['source_table'] ?? 'product';
+                        $value = $source . ':' . $v['id'];
+                        $label = $v['name'] ?? '';
+                        if (!empty($v['sku'])) {
+                            $label .= ' | ' . $v['sku'];
+                        }
+                        if (!empty($v['brand'])) {
+                            $label .= ' | ' . $v['brand'];
+                        }
+                        if ($source === 'product_3rd' && !empty($v['marketplace'])) {
+                            $label .= ' (Synced ' . $v['marketplace'] . ')';
+                        }
+                        $selected_ids = explode(',', $data['product'] ?? '');
+                        $selected = in_array($value, $selected_ids) || in_array($v['id'], $selected_ids) ? 'selected' : '';
+                    ?>
+                    <option <?= $selected ?> value="<?= $value ?>" data-product_text="<?= htmlspecialchars($label) ?>">
+                        <?= htmlspecialchars($label) ?>
                     </option>
                 <?php endforeach; ?>
             </select>
@@ -258,4 +273,3 @@
         return false;
     });
 </script>
-

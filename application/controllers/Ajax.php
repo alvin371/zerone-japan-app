@@ -3802,16 +3802,28 @@ gradient_6.addColorStop(0.75, "rgba(225, 225, 225, 0)")
 	{
 		$q = $_GET['search'] ?? '';
 
-		$query = $this->mymodel->selectWithQuery("SELECT id as id, name as text
-			FROM product 
-			WHERE name LIKE '%$q%' 
-			AND is_operational = 0 
-			AND status = 'Aktif' 
-                AND (
-                    is_varian = 1 
-                    OR (is_varian = 0 AND (parent_id IS NULL OR parent_id = ''))
-                )
-			ORDER BY name ASC
+		$q = $this->db->escape_like_str($q);
+
+		$query = $this->mymodel->selectWithQuery("
+			SELECT id, text FROM (
+				SELECT CONCAT('product:', p.id) AS id,
+					TRIM(CONCAT(p.name, ' | ', COALESCE(p.sku, ''), ' | ', COALESCE(p.brand, ''))) AS text
+				FROM product p
+				WHERE p.name LIKE '%$q%'
+				AND p.is_operational = 0
+				AND p.status = 'Aktif'
+				AND (
+					p.is_varian = 1
+					OR (p.is_varian = 0 AND (p.parent_id IS NULL OR p.parent_id = ''))
+				)
+				UNION ALL
+				SELECT CONCAT('product_3rd:', p3.id) AS id,
+					TRIM(CONCAT(p3.name, ' | ', COALESCE(p3.sku, ''), ' | ', COALESCE(p3.brand, ''), ' (Synced ', COALESCE(p3.marketplace, ''), ')')) AS text
+				FROM product_3rd p3
+				WHERE p3.name LIKE '%$q%'
+				AND (p3.status = 'Aktif' OR p3.status = 'ENABLE')
+			) AS combined
+			ORDER BY text ASC
 			LIMIT 10");
 
 

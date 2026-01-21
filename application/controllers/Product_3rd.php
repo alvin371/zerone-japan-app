@@ -471,13 +471,18 @@ class Product_3rd extends CI_Controller
         ORDER BY name ASC
         ");
 
-        $query = $this->mymodel->selectWithQuery("SELECT * FROM product WHERE is_varian = 0 ORDER BY name ASC");
-
-        $data['product'] = $query;
+        $data['product'] = $this->mymodel->get_product_dropdown_list(array(
+            'order' => 'name'
+        ));
 
         $text = '';
         foreach ($data['product'] as $k => $v) {
-            $text .= '<option value="' . $v['id'] . '">' . $v['sku'] . ' | ' . $v['name'] . '</option>';
+            $value = $v['source_table'] . ':' . $v['id'];
+            $label = $v['sku'] . ' | ' . $v['name'];
+            if (!empty($v['marketplace'])) {
+                $label .= ' (' . $v['marketplace'] . ')';
+            }
+            $text .= '<option value="' . $value . '">' . $label . '</option>';
         }
         $data['opt_product'] = $text;
         $this->load->view("product_3rd/edit", $data);
@@ -499,12 +504,26 @@ class Product_3rd extends CI_Controller
             $sku = $dt_sku[$k2];
             foreach ($dtt[$v2] as $k => $v) {
                 $dttt[$k] = $v;
-                $id_product = $v['product'];
+                $raw_product = trim(strval($v['product']));
+                $product_source = 'product';
+                $product_id = $raw_product;
+                if ($raw_product !== '' && strpos($raw_product, ':') !== false) {
+                    $parts = explode(':', $raw_product, 2);
+                    if (in_array($parts[0], array('product', 'product_3rd'), true)) {
+                        $product_source = $parts[0];
+                        $product_id = $parts[1] ?? '';
+                    }
+                }
 
-                $query = $this->mymodel->selectWithQuery("SELECT * FROM product WHERE id = '$id_product'");
+                if ($product_source === 'product_3rd') {
+                    $query = $this->mymodel->selectWithQuery("SELECT * FROM product_3rd WHERE id = '$product_id'");
+                } else {
+                    $query = $this->mymodel->selectWithQuery("SELECT * FROM product WHERE id = '$product_id'");
+                }
 
-                $dttt[$k]['product_text'] = strval($query[0]['name']);
-                $dttt[$k]['brand'] = strval($query[0]['brand']);
+                $dttt[$k]['product_source'] = $product_source;
+                $dttt[$k]['product_text'] = strval($query[0]['name'] ?? '');
+                $dttt[$k]['brand'] = strval($query[0]['brand'] ?? '');
                 // echo $k;
             }
             $dtt_fix = array();

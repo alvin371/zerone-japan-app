@@ -229,11 +229,10 @@ class Crm extends BaseController
 
 
 
-        $query = $this->mymodel->selectWithQuery("SELECT * FROM product WHERE status = 'ENABLE' AND is_varian = 0
-        ORDER BY sku ASC
-        ");
-
-        $data['product'] = $query;
+        $data['product'] = $this->mymodel->get_product_dropdown_list(array(
+            'status' => array('Aktif', 'ENABLE'),
+            'order' => 'sku'
+        ));
 
         $query = $this->mymodel->selectWithQuery("SELECT * FROM user 
         WHERE role IN ('3')
@@ -242,11 +241,10 @@ class Crm extends BaseController
 
         $data['cs'] = $query;
 
-        $query = $this->mymodel->selectWithQuery("SELECT * FROM product WHERE status = 'ENABLE' AND is_varian = 0
-        ORDER BY sku ASC
-        ");
-
-        $data['product'] = $query;
+        $data['product'] = $this->mymodel->get_product_dropdown_list(array(
+            'status' => array('Aktif', 'ENABLE'),
+            'order' => 'sku'
+        ));
 
         $query = $this->mymodel->selectWithQuery("SELECT * FROM shipping ORDER BY name ASC");
 
@@ -399,11 +397,10 @@ class Crm extends BaseController
 
 
 
-        $query = $this->mymodel->selectWithQuery("SELECT * FROM product WHERE status = 'ENABLE' AND is_varian = 0
-        ORDER BY sku ASC
-        ");
-
-        $data['product'] = $query;
+        $data['product'] = $this->mymodel->get_product_dropdown_list(array(
+            'status' => array('Aktif', 'ENABLE'),
+            'order' => 'sku'
+        ));
 
         $query = $this->mymodel->selectWithQuery("SELECT * FROM user WHERE role = '3' 
         ORDER BY full_name ASC
@@ -411,11 +408,10 @@ class Crm extends BaseController
 
         $data['cs'] = $query;
 
-        $query = $this->mymodel->selectWithQuery("SELECT * FROM product WHERE status = 'ENABLE' AND is_varian = 0
-        ORDER BY sku ASC
-        ");
-
-        $data['product'] = $query;
+        $data['product'] = $this->mymodel->get_product_dropdown_list(array(
+            'status' => array('Aktif', 'ENABLE'),
+            'order' => 'sku'
+        ));
 
         $query = $this->mymodel->selectWithQuery("SELECT * FROM shipping ORDER BY name ASC");
 
@@ -466,11 +462,10 @@ class Crm extends BaseController
 
         $data['cs'] = $query;
 
-        $query = $this->mymodel->selectWithQuery("SELECT * FROM product WHERE status = 'ENABLE' AND is_varian = 0
-        ORDER BY sku ASC
-        ");
-
-        $data['product'] = $query;
+        $data['product'] = $this->mymodel->get_product_dropdown_list(array(
+            'status' => array('Aktif', 'ENABLE'),
+            'order' => 'sku'
+        ));
 
         $query = $this->mymodel->selectWithQuery("SELECT * FROM shipping ORDER BY name ASC");
 

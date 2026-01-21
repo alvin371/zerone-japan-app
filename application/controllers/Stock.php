@@ -139,9 +139,25 @@ class Stock extends BaseController
         $data['param_pagination'] = $this->template->get_param_without('page');
         $data['pagination'] = $this->template->pagination($data['page'], $current_page, $data['param_pagination']);
 
-        $query = $this->mymodel->selectWithQuery("SELECT id, name as opt FROM product WHERE is_varian = 0
-        ORDER BY name ASC
-        ");
+        $query = $this->mymodel->get_product_dropdown_list(array(
+            'order' => 'name'
+        ));
+        foreach ($query as $k => $v) {
+            $source = $v['source_table'] ?? 'product';
+            $value = $source . ':' . $v['id'];
+            $label = $v['name'];
+            if (!empty($v['sku'])) {
+                $label .= ' | ' . $v['sku'];
+            }
+            if (!empty($v['brand'])) {
+                $label .= ' | ' . $v['brand'];
+            }
+            if ($source === 'product_3rd' && !empty($v['marketplace'])) {
+                $label .= ' (Synced ' . $v['marketplace'] . ')';
+            }
+            $query[$k]['value'] = $value;
+            $query[$k]['opt'] = $label;
+        }
 
         $data['product'] = $query;
 
@@ -207,8 +223,10 @@ class Stock extends BaseController
         $query = $this->mymodel->selectWithQuery("SELECT * FROM shipping ORDER BY name ASC");
         $data['shipping'] = $query;
 
-        $query = $this->mymodel->selectWithQuery("SELECT * FROM product WHERE status = 'Aktif' AND is_varian = 0 ORDER BY name ASC");
-        $data['product'] = $query;
+        $data['product'] = $this->mymodel->get_product_dropdown_list(array(
+            'status' => array('Aktif', 'ENABLE'),
+            'order' => 'name'
+        ));
 
         $query = $this->mymodel->selectWithQuery("SELECT * FROM brand ORDER BY code ASC");
         $data['brands'] = $query;
@@ -318,11 +336,26 @@ class Stock extends BaseController
         }
 
 
-        if ($_POST['column'] == 'dt[product]') {
-            $id_product = $_POST['value'];
-            $query = $this->mymodel->selectWithQuery("SELECT brand FROM product WHERE id = '$id_product'");
+        $parsed_product = $this->parse_product_value($_POST['value'] ?? ($dt['product'] ?? ''));
+        $product_source = $parsed_product['source'];
+        $product_id = $parsed_product['id'];
+        $product_key = $parsed_product['raw'] !== '' ? $parsed_product['raw'] : $product_id;
+        if (!empty($product_key)) {
+            $dt['product'] = $product_key;
+        }
+        if ($this->db->field_exists('product_source', 'stock')) {
+            $dt['product_source'] = $product_source;
+        }
 
-            $dt['brand'] = strval($query[0]['brand']);
+        if ($_POST['column'] == 'dt[product]') {
+            if ($product_source === 'product_3rd') {
+                $query = $this->mymodel->selectWithQuery("SELECT brand, name FROM product_3rd WHERE id = '$product_id'");
+            } else {
+                $query = $this->mymodel->selectWithQuery("SELECT brand, name FROM product WHERE id = '$product_id'");
+            }
+
+            $dt['brand'] = strval($query[0]['brand'] ?? '');
+            $dt['product_text'] = strval($query[0]['name'] ?? '');
         }
 
         if (in_array($_POST['column'], array('dt[product]', 'dt[qty]', 'dt[type]')) && $dt['product']) {
@@ -338,27 +371,33 @@ class Stock extends BaseController
 
             if ($latest_product) {
                 $dtp = array();
-                $id_product = $latest_product;
-                $query = $this->mymodel->selectWithQuery("SELECT SUM(qty_in) as qty_in,SUM(qty_out) as qty_out,SUM(qty) as qty FROM stock WHERE product = '$id_product'");
+                $latest_parsed = $this->parse_product_value($latest_product);
+                $latest_key = $latest_parsed['raw'] !== '' ? $latest_parsed['raw'] : $latest_parsed['id'];
+                $query = $this->mymodel->selectWithQuery("SELECT SUM(qty_in) as qty_in,SUM(qty_out) as qty_out,SUM(qty) as qty FROM stock WHERE product = '$latest_key'");
 
-                $dtp['stock_in'] = strval($query[0]['qty_in']);
-                $dtp['stock_out'] = strval(abs($query[0]['qty_out']) * -1);
-                $dtp['stock'] = strval(doubleval($query[0]['qty']));
-                $model_2 = $this->db->table('product');
-                $model_2->where('id', $id_product);
-                $model_2->update($dtp);
+                if ($latest_parsed['source'] === 'product') {
+                    $dtp['stock_in'] = strval($query[0]['qty_in']);
+                    $dtp['stock_out'] = strval(abs($query[0]['qty_out']) * -1);
+                    $dtp['stock'] = strval(doubleval($query[0]['qty']));
+                    $model_2 = $this->db->table('product');
+                    $model_2->where('id', $latest_parsed['id']);
+                    $model_2->update($dtp);
+                }
             }
 
             $dtp = array();
-            $id_product = $dt['product'];
-            $query = $this->mymodel->selectWithQuery("SELECT SUM(qty_in) as qty_in,SUM(qty_out) as qty_out,SUM(qty) as qty FROM stock WHERE product = '$id_product'");
+            $current_parsed = $this->parse_product_value($dt['product']);
+            $current_key = $current_parsed['raw'] !== '' ? $current_parsed['raw'] : $current_parsed['id'];
+            $query = $this->mymodel->selectWithQuery("SELECT SUM(qty_in) as qty_in,SUM(qty_out) as qty_out,SUM(qty) as qty FROM stock WHERE product = '$current_key'");
 
-            $dtp['stock_in'] = strval($query[0]['qty_in']);
-            $dtp['stock_out'] = strval(abs($query[0]['qty_out']) * -1);
-            $dtp['stock'] = strval(doubleval($query[0]['qty']));
-            $model_3 = $this->db->table('product');
-            $model_3->where('id', $id_product);
-            $model_3->update($dtp);
+            if ($current_parsed['source'] === 'product') {
+                $dtp['stock_in'] = strval($query[0]['qty_in']);
+                $dtp['stock_out'] = strval(abs($query[0]['qty_out']) * -1);
+                $dtp['stock'] = strval(doubleval($query[0]['qty']));
+                $model_3 = $this->db->table('product');
+                $model_3->where('id', $current_parsed['id']);
+                $model_3->update($dtp);
+            }
         } else {
 
             $model = $db->table('stock');
@@ -419,7 +458,9 @@ class Stock extends BaseController
         $data['data'] = $this->mymodel->selectWithQuery("SELECT * FROM stock WHERE id = '$id'");
         $data['data'] = $data['data'][0];
 
-        $data['product'] = $this->mymodel->selectWithQuery("SELECT * FROM product WHERE is_varian = 0 ORDER BY name ASC");
+        $data['product'] = $this->mymodel->get_product_dropdown_list(array(
+            'order' => 'name'
+        ));
         $data['brand'] = $this->mymodel->selectWithQuery("SELECT * FROM brand ORDER BY code ASC");
 
         $this->load->view("stock/edit", $data);
@@ -447,10 +488,21 @@ class Stock extends BaseController
 
         $dt['type_sub'] = "Stock";
 
-        $product = $dt['product'];
-        $query = $this->mymodel->selectWithQuery("SELECT * FROM product WHERE id = '$product'");
-        $dt['product_text'] = strval($query[0]['name']);
-        $dt['brand'] = strval($query[0]['brand']);
+        $parsed_product = $this->parse_product_value($dt['product']);
+        $product_source = $parsed_product['source'];
+        $product_id = $parsed_product['id'];
+        $product_key = $parsed_product['raw'] !== '' ? $parsed_product['raw'] : $product_id;
+        $dt['product'] = $product_key;
+        if ($this->db->field_exists('product_source', 'stock')) {
+            $dt['product_source'] = $product_source;
+        }
+        if ($product_source === 'product_3rd') {
+            $product_row = $this->mymodel->selectDataOne('product_3rd', array('id' => $product_id));
+        } else {
+            $product_row = $this->mymodel->selectDataOne('product', array('id' => $product_id));
+        }
+        $dt['product_text'] = strval($product_row['name'] ?? '');
+        $dt['brand'] = strval($product_row['brand'] ?? '');
 
         if ($_FILES['file']['name']) {
             $input = $this->validate([
@@ -483,7 +535,9 @@ class Stock extends BaseController
 
 
         if ($this->db->update('stock', $dt, array('id' => $id))) {
-            $this->update_stock($dt['product']);
+            if ($product_source === 'product') {
+                $this->update_stock($dt['product']);
+            }
             $msg = 'Update data berhasil!';
             echo $this->template->alert_success($msg);
         } else {
@@ -497,7 +551,9 @@ class Stock extends BaseController
     public function create()
     {
 
-        $data['product'] = $this->mymodel->selectWithQuery("SELECT * FROM product WHERE is_varian = 0 ORDER BY name ASC");
+        $data['product'] = $this->mymodel->get_product_dropdown_list(array(
+            'order' => 'name'
+        ));
         $data['brand'] = $this->mymodel->selectWithQuery("SELECT * FROM brand ORDER BY code ASC");
 
         $this->load->view("stock/create", $data);
@@ -527,10 +583,21 @@ class Stock extends BaseController
 
         $dt['type_sub'] = "Stock";
 
-        $product = $dt['product'];
-        $query = $this->mymodel->selectWithQuery("SELECT * FROM product WHERE id = '$product'");
-        $dt['product_text'] = strval($query[0]['name']);
-        $dt['brand'] = strval($query[0]['brand']);
+        $parsed_product = $this->parse_product_value($dt['product']);
+        $product_source = $parsed_product['source'];
+        $product_id = $parsed_product['id'];
+        $product_key = $parsed_product['raw'] !== '' ? $parsed_product['raw'] : $product_id;
+        $dt['product'] = $product_key;
+        if ($this->db->field_exists('product_source', 'stock')) {
+            $dt['product_source'] = $product_source;
+        }
+        if ($product_source === 'product_3rd') {
+            $product_row = $this->mymodel->selectDataOne('product_3rd', array('id' => $product_id));
+        } else {
+            $product_row = $this->mymodel->selectDataOne('product', array('id' => $product_id));
+        }
+        $dt['product_text'] = strval($product_row['name'] ?? '');
+        $dt['brand'] = strval($product_row['brand'] ?? '');
 
         if ($_FILES['file']['name']) {
             $input = $this->validate([
@@ -618,15 +685,20 @@ class Stock extends BaseController
     {
 
         $dtp = array();
-        $id_product = $id_product;
-        $query = $this->mymodel->selectWithQuery("SELECT SUM(qty_in) as qty_in,SUM(qty_in_pos) as qty_in_pos,SUM(qty_out) as qty_out,SUM(qty_out_pos) as qty_out_pos,SUM(qty) as qty FROM stock WHERE product = '$id_product'");
+        $parsed = $this->parse_product_value($id_product);
+        $raw_key = $parsed['raw'] !== '' ? $parsed['raw'] : $parsed['id'];
+        $query = $this->mymodel->selectWithQuery("SELECT SUM(qty_in) as qty_in,SUM(qty_in_pos) as qty_in_pos,SUM(qty_out) as qty_out,SUM(qty_out_pos) as qty_out_pos,SUM(qty) as qty FROM stock WHERE product = '$raw_key'");
+
+        if ($parsed['source'] !== 'product') {
+            return;
+        }
 
         $dtp['stock_in'] = strval($query[0]['qty_in']);
         $dtp['stock_in_pos'] = strval($query[0]['qty_in_pos']);
         $dtp['stock_out'] = strval(abs($query[0]['qty_out']) * -1);
         $dtp['stock_out_pos'] = strval(abs($query[0]['qty_out_pos']) * -1);
         $dtp['stock'] = strval(doubleval($query[0]['qty']));
-        $this->db->update('product', $dtp, array('id' => $id_product));
+        $this->db->update('product', $dtp, array('id' => $parsed['id']));
     }
 
     function sync()

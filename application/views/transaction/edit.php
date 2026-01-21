@@ -425,8 +425,14 @@ $user = $_SESSION['user'];
 						<option value=""></option>
 						<?php
 						foreach ($product as $k2 => $v2) {
+							$source = $v2['source_table'] ?? 'product';
+							$value = $source . ':' . $v2['id'];
+							$label = $v2['name'] . ' | ' . $v2['sku'] . ' | ' . $v2['brand'];
+							if ($source === 'product_3rd' && !empty($v2['marketplace'])) {
+								$label .= ' (Synced ' . $v2['marketplace'] . ')';
+							}
 						?>
-							<option <?= $text ?> value="<?= $v2['id'] ?>"><?= $v2['name'] ?> | <?= $v2['sku'] ?> | <?= $v2['brand'] ?></option>
+							<option <?= $text ?> value="<?= $value ?>"><?= $label ?></option>
 						<?php } ?>
 					</select>
 				</div>

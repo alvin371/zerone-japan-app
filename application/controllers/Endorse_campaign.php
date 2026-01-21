@@ -280,18 +280,10 @@ class Endorse_campaign extends BaseController
         $products_cache_key = 'endorse_campaign_products_active';
         $products_data = $this->cache->get($products_cache_key);
         if (!$products_data) {
-            $products_data = $this->mymodel->selectWithQuery("
-                SELECT id, name 
-                FROM product 
-                WHERE 
-                    is_operational = 0 
-                    AND status = 'Aktif' 
-                    AND (
-                        is_varian = 1 
-                        OR (is_varian = 0 AND (parent_id IS NULL OR parent_id = ''))
-                    )
-                ORDER BY name ASC
-            ");
+            $products_data = $this->mymodel->get_product_dropdown_list(array(
+                'status' => array('Aktif', 'ENABLE'),
+                'order' => 'name'
+            ));
             $this->cache->save($products_cache_key, $products_data, 30); // Cache for 30 seconds
         }
         $data['produk'] = $products_data;
@@ -632,18 +624,10 @@ class Endorse_campaign extends BaseController
         $products_cache_key = 'endorse_campaign_products_active';
         $products_data = $this->cache->get($products_cache_key);
         if (!$products_data) {
-            $products_data = $this->mymodel->selectWithQuery("
-                SELECT id, name 
-                FROM product 
-                WHERE 
-                    is_operational = 0 
-                    AND status = 'Aktif' 
-                    AND (
-                        is_varian = 1 
-                        OR (is_varian = 0 AND (parent_id IS NULL OR parent_id = ''))
-                    )
-                ORDER BY name ASC
-            ");
+            $products_data = $this->mymodel->get_product_dropdown_list(array(
+                'status' => array('Aktif', 'ENABLE'),
+                'order' => 'name'
+            ));
             $this->cache->save($products_cache_key, $products_data, 30); // Cache for 30 seconds
         }
         $data['produk'] = $products_data;

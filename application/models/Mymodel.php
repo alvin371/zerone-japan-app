@@ -22,6 +22,56 @@ class Mymodel extends CI_Model {
     		return $query->result_array();
     	}
 
+		public function get_product_dropdown_list($options = array())
+		{
+			$include_synced = $options['include_synced'] ?? true;
+			$status = $options['status'] ?? null;
+			$order = $options['order'] ?? 'name';
+
+			$product_where = "is_varian = 0";
+			$synced_where = "1=1";
+
+			if (!empty($status)) {
+				$status_list = is_array($status) ? $status : array($status);
+				$status_list = array_map(function ($value) {
+					return $this->db->escape_str($value);
+				}, $status_list);
+				$status_in = "'" . implode("','", $status_list) . "'";
+				$product_where .= " AND status IN ($status_in)";
+				$synced_where .= " AND status IN ($status_in)";
+			}
+
+			$product_sql = "
+				SELECT id, name, sku, brand, brand_text,
+					price_buy, price_normal, price_reseller, price_distributor,
+					NULL AS marketplace, 'product' AS source_table
+				FROM product
+				WHERE $product_where
+			";
+
+			if ($include_synced) {
+				$synced_sql = "
+				SELECT id, name, sku, brand, NULL AS brand_text,
+					NULL AS price_buy, price_normal, NULL AS price_reseller, NULL AS price_distributor,
+					marketplace, 'product_3rd' AS source_table
+				FROM product_3rd
+					WHERE $synced_where
+				";
+				$sql = "
+					SELECT * FROM (
+						$product_sql
+						UNION ALL
+						$synced_sql
+					) AS combined
+					ORDER BY $order ASC
+				";
+			} else {
+				$sql = $product_sql . " ORDER BY $order ASC";
+			}
+
+			return $this->selectWithQuery($sql);
+		}
+
 
 		public function selectWhere($table,$where)
 		{
