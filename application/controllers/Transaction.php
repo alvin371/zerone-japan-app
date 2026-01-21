@@ -870,9 +870,9 @@ class Transaction extends BaseController
         FROM shipping
         ORDER BY name ASC");
 
-        $data['product'] = $this->mymodel->selectWithQuery("SELECT *
-        FROM product WHERE is_varian = 0
-        ORDER BY name ASC");
+        $data['product'] = $this->mymodel->get_product_dropdown_list(array(
+            'order' => 'name'
+        ));
 
         $data['cs'] = $this->mymodel->selectWithQuery("SELECT *
         FROM user
@@ -975,7 +975,10 @@ class Transaction extends BaseController
     {
         $dt = $_POST;
         $id = $dt['id'];
-        $id_product = $dt['product'];
+        $parsed_product = $this->parse_product_value($dt['product']);
+        $id_product = $parsed_product['id'];
+        $product_source = $parsed_product['source'];
+        $product_key = $parsed_product['raw'] !== '' ? $parsed_product['raw'] : $id_product;
         $customer = $dt['customer'];
 
         if ($id) {
@@ -992,53 +995,67 @@ class Transaction extends BaseController
         $text = "";
         $total = 0;
 
-        $query = $this->mymodel->selectWithQuery("SELECT * FROM product WHERE id = '$id_product'");
-
-        $product = $query[0];
+        if ($product_source === 'product_3rd') {
+            $product = $this->mymodel->selectDataOne('product_3rd', array('id' => $id_product));
+        } else {
+            $product = $this->mymodel->selectDataOne('product', array('id' => $id_product));
+        }
 
         if (empty($product)) {
             die;
         }
 
-        if ($json[$id_product]) {
-            $json[$id_product]['product'] = $dt['product'];
-            $json[$id_product]['sku'] = $product['sku'];
-            $json[$id_product]['product_text'] = $product['name'];
-            $json[$id_product]['brand'] = $product['brand'];
-            $json[$id_product]['brand_text'] = $product['brand_text'];
-            $json[$id_product]['qty'] = $json[$id_product]['qty'] + 1;
+        $fallback_product = null;
+        if ($product_source === 'product_3rd' && !empty($product['sku'])) {
+            $fallback_product = $this->mymodel->selectDataOne('product', array('sku' => $product['sku'], 'is_varian' => 0));
+        }
+
+        $price_buy = $product['price_buy'] ?? ($fallback_product['price_buy'] ?? 0);
+        $price_normal = $product['price_normal'] ?? ($fallback_product['price_normal'] ?? 0);
+        $price_reseller = $product['price_reseller'] ?? ($fallback_product['price_reseller'] ?? 0);
+        $price_distributor = $product['price_distributor'] ?? ($fallback_product['price_distributor'] ?? 0);
+
+        if (isset($json[$product_key])) {
+            $json[$product_key]['product'] = $product_key;
+            $json[$product_key]['product_source'] = $product_source;
+            $json[$product_key]['sku'] = $product['sku'] ?? '';
+            $json[$product_key]['product_text'] = $product['name'] ?? '';
+            $json[$product_key]['brand'] = $product['brand'] ?? '';
+            $json[$product_key]['brand_text'] = $product['brand_text'] ?? '';
+            $json[$product_key]['qty'] = $json[$product_key]['qty'] + 1;
             if ($customer == "Pelanggan") {
-                $json[$id_product]['price'] = $product['price_normal'];
-                $json[$id_product]['price_total'] = ($json[$id_product]['qty']) * $product['price_normal'];
+                $json[$product_key]['price'] = $price_normal;
+                $json[$product_key]['price_total'] = ($json[$product_key]['qty']) * $price_normal;
             } else if ($customer == "Reseller") {
-                $json[$id_product]['price'] = $product['price_reseller'];
-                $json[$id_product]['price_total'] = ($json[$id_product]['qty']) * $product['price_reseller'];
+                $json[$product_key]['price'] = $price_reseller;
+                $json[$product_key]['price_total'] = ($json[$product_key]['qty']) * $price_reseller;
             } else if ($customer == "Distributor") {
-                $json[$id_product]['price'] = $product['price_distributor'];
-                $json[$id_product]['price_total'] = ($json[$id_product]['qty']) * $product['price_distributor'];
+                $json[$product_key]['price'] = $price_distributor;
+                $json[$product_key]['price_total'] = ($json[$product_key]['qty']) * $price_distributor;
             } else if ($customer == "Free" || $customer == "Affiliate") {
-                $json[$id_product]['price'] = 0;
-                $json[$id_product]['price_total'] = 0;
+                $json[$product_key]['price'] = 0;
+                $json[$product_key]['price_total'] = 0;
             }
         } else {
-            $json[$id_product]['product'] = $dt['product'];
-            $json[$id_product]['sku'] = $product['sku'];
-            $json[$id_product]['product_text'] = $product['name'];
-            $json[$id_product]['brand'] = $product['brand'];
-            $json[$id_product]['brand_text'] = $product['brand_text'];
-            $json[$id_product]['qty'] = 1;
+            $json[$product_key]['product'] = $product_key;
+            $json[$product_key]['product_source'] = $product_source;
+            $json[$product_key]['sku'] = $product['sku'] ?? '';
+            $json[$product_key]['product_text'] = $product['name'] ?? '';
+            $json[$product_key]['brand'] = $product['brand'] ?? '';
+            $json[$product_key]['brand_text'] = $product['brand_text'] ?? '';
+            $json[$product_key]['qty'] = 1;
             if ($customer == "Pelanggan") {
-                $json[$id_product]['price'] = $product['price_normal'];
-                $json[$id_product]['price_total'] = 1 * $product['price_normal'];
+                $json[$product_key]['price'] = $price_normal;
+                $json[$product_key]['price_total'] = 1 * $price_normal;
             } else if ($customer == "Reseller") {
-                $json[$id_product]['price'] = $product['price_reseller'];
-                $json[$id_product]['price_total'] = 1 * $product['price_reseller'];
+                $json[$product_key]['price'] = $price_reseller;
+                $json[$product_key]['price_total'] = 1 * $price_reseller;
             } else if ($customer == "Distributor") {
-                $json[$id_product]['price'] = $product['price_distributor'];
-                $json[$id_product]['price_total'] = 1 * $product['price_distributor'];
+                $json[$product_key]['price'] = $price_distributor;
+                $json[$product_key]['price_total'] = 1 * $price_distributor;
             } else if ($customer == "Free" || $customer == "Affiliate") {
-                $json[$id_product]['price'] = 0;
-                $json[$id_product]['price_total'] = 0;
+                $json[$product_key]['price'] = 0;
+                $json[$product_key]['price_total'] = 0;
             }
         }
 
@@ -1872,9 +1889,9 @@ class Transaction extends BaseController
         FROM shipping
         ORDER BY name ASC");
 
-        $data['product'] = $this->mymodel->selectWithQuery("SELECT *
-        FROM product WHERE is_varian = 0
-        ORDER BY name ASC");
+        $data['product'] = $this->mymodel->get_product_dropdown_list(array(
+            'order' => 'name'
+        ));
 
         $data['content'] = $this->load->view("transaction/create", $data, true);
         $this->load->view("TemplateDashboard", $data);

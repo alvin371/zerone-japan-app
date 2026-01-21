@@ -147,17 +147,10 @@ class Calendar extends BaseController
             FROM endorse_campaign
             ORDER BY title ASC");
 
-        $data['product'] = $this->mymodel->selectWithQuery("
-            SELECT id, name 
-            FROM product 
-            WHERE 
-                is_operational = 0 
-                AND status = 'Aktif' 
-                AND (
-                    is_varian = 1 
-                    OR (is_varian = 0 AND (parent_id IS NULL OR parent_id = ''))
-                )
-            ORDER BY name ASC");
+        $data['product'] = $this->mymodel->get_product_dropdown_list(array(
+            'status' => array('Aktif', 'ENABLE'),
+            'order' => 'name'
+        ));
 
         $view_path = 'endorse/calendar';
         $data['content'] = $this->load->view($view_path, $data, true);

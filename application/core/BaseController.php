@@ -123,6 +123,30 @@ class BaseController extends CI_Controller
         // Standard mapping
         return $this->controller_module_map[$controller] ?? $controller;
     }
+
+    protected function parse_product_value($raw)
+    {
+        $raw = trim(strval($raw));
+        $source = 'product';
+        $id = $raw;
+
+        if ($raw !== '' && strpos($raw, ':') !== false) {
+            $parts = explode(':', $raw, 2);
+            $candidate = $parts[0] ?? '';
+            $candidate_id = $parts[1] ?? '';
+
+            if (in_array($candidate, array('product', 'product_3rd'), true)) {
+                $source = $candidate;
+                $id = $candidate_id;
+            }
+        }
+
+        return array(
+            'source' => $source,
+            'id' => $id,
+            'raw' => $raw
+        );
+    }
     
     /**
      * Check method permission based on current method

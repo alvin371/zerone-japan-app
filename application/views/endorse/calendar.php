@@ -441,9 +441,21 @@ function build_url($base_url, $params = [])
                             <?php
                             $ids = $_GET['ids_product'] ?? [];
                             foreach ($product as $val) :
-                                $selected = in_array($val['id'], $ids) ? 'selected' : '';
+                                $source = $val['source_table'] ?? 'product';
+                                $value = $source . ':' . $val['id'];
+                                $label = $val['name'] ?? '';
+                                if (!empty($val['sku'])) {
+                                    $label .= ' | ' . $val['sku'];
+                                }
+                                if (!empty($val['brand'])) {
+                                    $label .= ' | ' . $val['brand'];
+                                }
+                                if ($source === 'product_3rd' && !empty($val['marketplace'])) {
+                                    $label .= ' (Synced ' . $val['marketplace'] . ')';
+                                }
+                                $selected = in_array($value, $ids) || in_array($val['id'], $ids) ? 'selected' : '';
                             ?>
-                                <option <?= $selected ?> value="<?= $val["id"] ?>"><?= $val["name"] ?></option>
+                                <option <?= $selected ?> value="<?= $value ?>"><?= $label ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>

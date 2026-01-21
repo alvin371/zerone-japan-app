@@ -1807,18 +1807,10 @@ class Endorse extends BaseController
             ];
         }
 
-        $data['product_all'] = $this->mymodel->selectWithQuery("
-            SELECT id, name
-            FROM product
-            WHERE
-                is_operational = 0
-                AND status = 'Aktif'
-                AND (
-                    is_varian = 1
-                    OR (is_varian = 0 AND (parent_id IS NULL OR parent_id = ''))
-                )
-            ORDER BY name ASC
-        ");
+        $data['product_all'] = $this->mymodel->get_product_dropdown_list(array(
+            'status' => array('Aktif', 'ENABLE'),
+            'order' => 'name'
+        ));
 
         $data['niche'] = $this->mymodel->selectWithQuery("SELECT DISTINCT niche FROM niche ORDER BY niche ASC");
 
@@ -2202,18 +2194,10 @@ class Endorse extends BaseController
             ];
         }
 
-        $data['product_all'] = $this->mymodel->selectWithQuery("
-            SELECT id, name
-            FROM product
-            WHERE
-                is_operational = 0
-                AND status = 'Aktif'
-                AND (
-                    is_varian = 1
-                    OR (is_varian = 0 AND (parent_id IS NULL OR parent_id = ''))
-                )
-            ORDER BY name ASC
-        ");
+        $data['product_all'] = $this->mymodel->get_product_dropdown_list(array(
+            'status' => array('Aktif', 'ENABLE'),
+            'order' => 'name'
+        ));
 
         $data['niche'] = $this->mymodel->selectWithQuery("SELECT DISTINCT niche FROM niche ORDER BY niche ASC");
 

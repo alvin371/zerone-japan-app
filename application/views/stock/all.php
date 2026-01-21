@@ -75,11 +75,11 @@ if ($_GET['until_date'] == "") {
                                         <?php
                                         foreach ($product as $val) :
                                             $text = '';
-                                            if ($_GET['product'] == $val['id']) {
+                                            if ($_GET['product'] == $val['id'] || $_GET['product'] == ($val['value'] ?? '')) {
                                                 $text = 'selected';
                                             }
                                         ?>
-                                            <option <?= $text ?> value="<?= $val['id'] ?>"><?= $val['opt'] ?></option>
+                                            <option <?= $text ?> value="<?= $val['value'] ?? $val['id'] ?>"><?= $val['opt'] ?></option>
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
