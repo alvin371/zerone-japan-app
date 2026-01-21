@@ -205,6 +205,101 @@ class Product_3rd extends CI_Controller
         }
     }
 
+    /**
+     * Initialize chunked sync - creates job and returns job_id
+     */
+    public function sync_process_init()
+    {
+        $marketplace = $_GET['marketplace'] ?? '';
+        $shop_id = $_GET['shop_id'] ?? '';
+
+        $curl = curl_init();
+        curl_setopt_array($curl, array(
+            CURLOPT_URL => base_url() . 'api/marketplace/product/init?marketplace=' . urlencode($marketplace) . '&shop_id=' . urlencode($shop_id),
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_ENCODING => '',
+            CURLOPT_MAXREDIRS => 10,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+            CURLOPT_CUSTOMREQUEST => 'GET',
+        ));
+
+        $response = curl_exec($curl);
+        $http_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        curl_close($curl);
+
+        header('Content-Type: application/json');
+        if ($http_code === 200 && $response) {
+            echo $response;
+        } else {
+            echo json_encode(['status' => false, 'msg' => 'Gagal menginisialisasi sync']);
+        }
+    }
+
+    /**
+     * Process one chunk of products
+     */
+    public function sync_process_chunk()
+    {
+        $job_id = $_GET['job_id'] ?? '';
+        $chunk_size = $_GET['chunk_size'] ?? 15;
+
+        $curl = curl_init();
+        curl_setopt_array($curl, array(
+            CURLOPT_URL => base_url() . 'api/marketplace/product/chunk?job_id=' . urlencode($job_id) . '&chunk_size=' . intval($chunk_size),
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_ENCODING => '',
+            CURLOPT_MAXREDIRS => 10,
+            CURLOPT_TIMEOUT => 120,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+            CURLOPT_CUSTOMREQUEST => 'GET',
+        ));
+
+        $response = curl_exec($curl);
+        $http_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        curl_close($curl);
+
+        header('Content-Type: application/json');
+        if ($http_code === 200 && $response) {
+            echo $response;
+        } else {
+            echo json_encode(['status' => false, 'msg' => 'Timeout atau error saat memproses chunk']);
+        }
+    }
+
+    /**
+     * Get sync job status
+     */
+    public function sync_process_status()
+    {
+        $job_id = $_GET['job_id'] ?? '';
+
+        $curl = curl_init();
+        curl_setopt_array($curl, array(
+            CURLOPT_URL => base_url() . 'api/marketplace/product/status?job_id=' . urlencode($job_id),
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_ENCODING => '',
+            CURLOPT_MAXREDIRS => 10,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+            CURLOPT_CUSTOMREQUEST => 'GET',
+        ));
+
+        $response = curl_exec($curl);
+        $http_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        curl_close($curl);
+
+        header('Content-Type: application/json');
+        if ($http_code === 200 && $response) {
+            echo $response;
+        } else {
+            echo json_encode(['status' => false, 'msg' => 'Gagal mendapatkan status sync']);
+        }
+    }
+
     public function sync_all_product()
     {
         // Ambil semua toko yang aktif dari database
