@@ -68,6 +68,11 @@ $route['api/marketplace/token/refresh'] = 'Api_v2/marketplace_token_refresh';
 $route['api/marketplace/order'] = 'Api_v2/marketplace_order';
 $route['api/marketplace/order/detail'] = 'Api_v2/marketplace_order_detail';
 $route['api/marketplace/product'] = 'Api_v2/marketplace_product';
+$route['api/marketplace/product/init'] = 'Api_v2/marketplace_product_init';
+$route['api/marketplace/product/chunk'] = 'Api_v2/marketplace_product_chunk';
+$route['api/marketplace/product/status'] = 'Api_v2/marketplace_product_status';
+$route['product-3rd/sync-process-init'] = 'Product_3rd/sync_process_init';
+$route['product-3rd/sync-process-chunk'] = 'Product_3rd/sync_process_chunk';
 $route['api/marketplace/webhook/refresh'] = 'Api_v2/marketplace_webhook_refresh';
 $route['api/marketplace/webhook/reset'] = 'Api_v2/marketplace_webhook_reset';
 $route['api/marketplace/order/tracking'] = 'Api_v2/marketplace_order_tracking';
@@ -147,4 +152,10 @@ $route['auth/redirect'] = 'TiktokAuth/redirect_to_auth';
 $route['auth/callback'] = 'TiktokAuth/callback';        
 $route['cronjob/expense'] = 'Api_v3/generate_recurring_expense';
 $route['cronjob/sync-product'] = 'Api_v3/sync_all_product';
+
+// Migrations
+$route['migrate'] = 'Migrate/index';
+$route['migrate/run'] = 'Migrate/run';
+$route['migrate/run/(:any)'] = 'Migrate/run_single/$1';
+$route['migrate/rollback/(:any)'] = 'Migrate/rollback/$1';
 

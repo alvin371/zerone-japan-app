@@ -3875,6 +3875,851 @@ class Api_v2 extends CI_Controller
         die;
     }
 
+    /**
+     * Initialize product sync job - creates a job record and returns job_id
+     */
+    function marketplace_product_init()
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        $marketplace = strtoupper($_GET['marketplace'] ?? '');
+        $shop_id = $_GET['shop_id'] ?? '';
+
+        if (empty($marketplace) || empty($shop_id)) {
+            echo json_encode(['status' => false, 'msg' => 'Marketplace dan shop_id wajib diisi']);
+            return;
+        }
+
+        // Get shop config
+        $config = $this->mymodel->selectDataOne('marketplace_config', [
+            'shop_id' => $shop_id,
+            'opt' => $marketplace,
+            'status' => 'Aktif'
+        ]);
+
+        if (!$config) {
+            echo json_encode(['status' => false, 'msg' => 'Shop tidak ditemukan atau tidak aktif']);
+            return;
+        }
+
+        // Create sync job
+        $job_data = [
+            'job_type' => 'product_sync',
+            'marketplace' => $marketplace,
+            'shop_id' => $shop_id,
+            'shop_name' => $config['shop_name'],
+            'status' => 'pending',
+            'total_products' => 0,
+            'processed_products' => 0,
+            'current_page' => 0,
+            'next_page_token' => '',
+            'created_by' => isset($_SESSION['user']['id']) ? $_SESSION['user']['id'] : null,
+            'created_at' => date('Y-m-d H:i:s')
+        ];
+
+        $this->db->insert('sync_jobs', $job_data);
+        $job_id = $this->db->insert_id();
+
+        echo json_encode([
+            'status' => true,
+            'job_id' => $job_id,
+            'marketplace' => $marketplace,
+            'shop_name' => $config['shop_name'],
+            'msg' => 'Sync job berhasil dibuat'
+        ]);
+    }
+
+    /**
+     * Process a chunk of products for sync job
+     */
+    function marketplace_product_chunk()
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        set_time_limit(120); // 2 minute max per chunk
+
+        $job_id = intval($_GET['job_id'] ?? 0);
+        $chunk_size = intval($_GET['chunk_size'] ?? 15);
+
+        if ($job_id <= 0) {
+            echo json_encode(['status' => false, 'msg' => 'Job ID tidak valid']);
+            return;
+        }
+
+        // Get job details
+        $job = $this->mymodel->selectDataOne('sync_jobs', ['id' => $job_id]);
+        if (!$job) {
+            echo json_encode(['status' => false, 'msg' => 'Job tidak ditemukan']);
+            return;
+        }
+
+        if ($job['status'] === 'completed') {
+            echo json_encode([
+                'status' => true,
+                'job_id' => $job_id,
+                'processed' => intval($job['processed_products']),
+                'total' => intval($job['total_products']),
+                'progress_percent' => 100,
+                'has_more' => false,
+                'msg' => 'Sync sudah selesai'
+            ]);
+            return;
+        }
+
+        if ($job['status'] === 'failed') {
+            echo json_encode(['status' => false, 'msg' => 'Job gagal: ' . $job['error_message']]);
+            return;
+        }
+
+        // Update status to processing
+        $this->db->update('sync_jobs', ['status' => 'processing', 'updated_at' => date('Y-m-d H:i:s')], ['id' => $job_id]);
+
+        $marketplace = $job['marketplace'];
+        $shop_id = $job['shop_id'];
+
+        // Get shop config
+        $config_data = $this->mymodel->selectDataOne('marketplace_config', [
+            'shop_id' => $shop_id,
+            'opt' => $marketplace,
+            'status' => 'Aktif'
+        ]);
+
+        if (!$config_data) {
+            $this->db->update('sync_jobs', [
+                'status' => 'failed',
+                'error_message' => 'Shop config tidak ditemukan',
+                'updated_at' => date('Y-m-d H:i:s')
+            ], ['id' => $job_id]);
+            echo json_encode(['status' => false, 'msg' => 'Shop config tidak ditemukan']);
+            return;
+        }
+
+        $shop_name = $config_data['shop_name'];
+        $next_page_token = $job['next_page_token'];
+        $processed_count = intval($job['processed_products']);
+        $total_products = intval($job['total_products']);
+
+        try {
+            if ($marketplace === 'TIKTOK') {
+                $result = $this->_sync_tiktok_chunk($config_data, $shop_id, $shop_name, $next_page_token, $chunk_size, $processed_count);
+            } else if ($marketplace === 'SHOPEE') {
+                $result = $this->_sync_shopee_chunk($config_data, $shop_id, $shop_name, $job['current_page'], $chunk_size, $processed_count);
+            } else if ($marketplace === 'LAZADA') {
+                $result = $this->_sync_lazada_chunk($config_data, $shop_id, $shop_name, $job['current_page'], $chunk_size, $processed_count);
+            } else {
+                throw new Exception('Marketplace tidak didukung: ' . $marketplace);
+            }
+
+            // Update job progress
+            $update_data = [
+                'current_page' => $result['current_page'],
+                'next_page_token' => $result['next_page_token'] ?? '',
+                'processed_products' => $result['processed_count'],
+                'total_products' => $result['total_products'] > 0 ? $result['total_products'] : $total_products,
+                'updated_at' => date('Y-m-d H:i:s')
+            ];
+
+            if (!$result['has_more']) {
+                $update_data['status'] = 'completed';
+                $update_data['completed_at'] = date('Y-m-d H:i:s');
+            }
+
+            $this->db->update('sync_jobs', $update_data, ['id' => $job_id]);
+
+            $final_total = $result['total_products'] > 0 ? $result['total_products'] : max($total_products, $result['processed_count']);
+            $progress = $final_total > 0 ? round(($result['processed_count'] / $final_total) * 100) : 0;
+
+            echo json_encode([
+                'status' => true,
+                'job_id' => $job_id,
+                'processed' => $result['processed_count'],
+                'total' => $final_total,
+                'progress_percent' => min($progress, 100),
+                'has_more' => $result['has_more'],
+                'msg' => $result['has_more'] ? 'Memproses...' : 'Sync selesai!'
+            ]);
+
+        } catch (Exception $e) {
+            $this->db->update('sync_jobs', [
+                'status' => 'failed',
+                'error_message' => $e->getMessage(),
+                'updated_at' => date('Y-m-d H:i:s')
+            ], ['id' => $job_id]);
+
+            echo json_encode(['status' => false, 'msg' => 'Error: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Get sync job status
+     */
+    function marketplace_product_status()
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        $job_id = intval($_GET['job_id'] ?? 0);
+
+        if ($job_id <= 0) {
+            echo json_encode(['status' => false, 'msg' => 'Job ID tidak valid']);
+            return;
+        }
+
+        $job = $this->mymodel->selectDataOne('sync_jobs', ['id' => $job_id]);
+
+        if (!$job) {
+            echo json_encode(['status' => false, 'msg' => 'Job tidak ditemukan']);
+            return;
+        }
+
+        $total = intval($job['total_products']);
+        $processed = intval($job['processed_products']);
+        $progress = $total > 0 ? round(($processed / $total) * 100) : 0;
+
+        echo json_encode([
+            'status' => true,
+            'job' => [
+                'id' => $job['id'],
+                'marketplace' => $job['marketplace'],
+                'shop_name' => $job['shop_name'],
+                'sync_status' => $job['status'],
+                'processed' => $processed,
+                'total' => $total,
+                'progress_percent' => min($progress, 100),
+                'error' => $job['error_message'],
+                'created_at' => $job['created_at'],
+                'completed_at' => $job['completed_at']
+            ]
+        ]);
+    }
+
+    /**
+     * Process TikTok products chunk
+     */
+    private function _sync_tiktok_chunk($config_data, $shop_id, $shop_name, $page_token, $chunk_size, $current_processed)
+    {
+        $config = json_decode($config_data['val'], true);
+        $app_key = $config['app_key'];
+        $access_token = $config['access_token'];
+        $shop_cipher = $config['shop']['cipher'];
+        $app_secret = $this->app_secret_tiktok;
+        $marketplace = 'TIKTOK';
+
+        $page_size = $chunk_size;
+        $processed_in_chunk = 0;
+        $total_products = 0;
+        $has_more = false;
+        $next_token = '';
+
+        // Fetch products
+        $url = 'https://open-api.tiktokglobalshop.com/product/202312/products/search?access_token=' . $access_token . '&app_key=' . $app_key . '&page_size=' . $page_size . '&page_token=' . $page_token . '&shop_cipher=' . $shop_cipher . '&shop_id=' . $shop_id . '&sign={{sign}}&timestamp={{timestamp}}&version=202312';
+        $urlParts = parse_url($url);
+        $paramGET = [];
+        parse_str($urlParts['query'], $paramGET);
+        $timest = strtotime('now');
+        $pr = [
+            'secret' => $app_secret,
+            'timest' => $timest,
+            'get' => $paramGET,
+            'post' => '{"status":"ACTIVATE"}',
+            'url' => $url
+        ];
+        $sign = $this->tiktok_signature_generator($pr);
+
+        $url = str_replace('{{sign}}', $sign, $url);
+        $url = str_replace('{{timestamp}}', $timest, $url);
+
+        $curl = curl_init();
+        curl_setopt_array($curl, [
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_ENCODING => '',
+            CURLOPT_MAXREDIRS => 10,
+            CURLOPT_TIMEOUT => 60,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+            CURLOPT_CUSTOMREQUEST => 'POST',
+            CURLOPT_POSTFIELDS => $pr['post'],
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'x-tts-access-token: ' . $access_token
+            ],
+        ]);
+
+        $response = curl_exec($curl);
+        curl_close($curl);
+        $response = json_decode($response, true);
+
+        if (isset($response['code']) && $response['code'] != 0) {
+            throw new Exception('TikTok API Error: ' . ($response['message'] ?? 'Unknown error'));
+        }
+
+        $total_products = intval($response['data']['total_count'] ?? 0);
+        $next_token = $response['data']['next_page_token'] ?? '';
+        $has_more = !empty($next_token);
+        $products = $response['data']['products'] ?? [];
+
+        foreach ($products as $v2) {
+            $id_product = $v2['id'];
+            $this->db->select('id');
+            $product = $this->mymodel->selectDataOne('product_3rd', ['id_product' => $id_product, 'marketplace' => $marketplace]);
+
+            // Get product detail
+            $detail_url = 'https://open-api.tiktokglobalshop.com/product/202309/products/' . $id_product . '?app_key=' . $app_key . '&shop_cipher=' . $shop_cipher . '&shop_id=' . $shop_id . '&access_token=' . $access_token . '&sign={{sign}}&timestamp={{timestamp}}&version=202309';
+
+            $urlParts = parse_url($detail_url);
+            $paramGET = [];
+            parse_str($urlParts['query'], $paramGET);
+            $timest = strtotime('now');
+            $pr = [
+                'secret' => $app_secret,
+                'timest' => $timest,
+                'get' => $paramGET,
+                'post' => '',
+                'url' => $detail_url
+            ];
+            $sign = $this->tiktok_signature_generator($pr);
+
+            $detail_url = str_replace('{{sign}}', $sign, $detail_url);
+            $detail_url = str_replace('{{timestamp}}', $timest, $detail_url);
+
+            $curl = curl_init();
+            curl_setopt_array($curl, [
+                CURLOPT_URL => $detail_url,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_CUSTOMREQUEST => 'GET',
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'x-tts-access-token: ' . $access_token
+                ],
+            ]);
+
+            $response_detail = curl_exec($curl);
+            curl_close($curl);
+            $response_detail = json_decode($response_detail, true);
+
+            $v2 = $response_detail['data'] ?? $v2;
+            $dt = [
+                'marketplace' => $marketplace,
+                'id_product' => $id_product,
+                'name' => strval($v2['title'] ?? ''),
+                'desc' => strval($v2['description'] ?? ''),
+                'sku' => strval($v2['sku'] ?? ''),
+                'shop_name' => $shop_name,
+                'shop_id' => $shop_id
+            ];
+
+            // Download image with timeout
+            $img_url = $v2['main_images'][0]['thumb_urls'][0] ?? '';
+            if ($img_url) {
+                $file_name = $id_product . '.jpg';
+                $img_dir = './assets/img/product_3rd/' . $file_name;
+                if (!file_exists($img_dir) || filemtime($img_dir) < strtotime('-7 days')) {
+                    $context = stream_context_create(['http' => ['timeout' => 5, 'ignore_errors' => true]]);
+                    $img_content = @file_get_contents($img_url, false, $context);
+                    if ($img_content !== false) {
+                        file_put_contents($img_dir, $img_content);
+                    }
+                }
+                $dt['img'] = $file_name;
+            }
+
+            if ($product) {
+                $dt['updated_at'] = date('Y-m-d H:i:s');
+                $this->db->update('product_3rd', $dt, ['id' => $product['id']]);
+            } else {
+                $dt['created_by'] = strval($_SESSION['user']['id'] ?? '');
+                $dt['created_at'] = date('Y-m-d H:i:s');
+                $this->db->insert('product_3rd', $dt);
+                $product['id'] = $this->db->insert_id();
+            }
+
+            // Process variants
+            $item = $v2['skus'] ?? [];
+            $item_list = [];
+            if (empty($item)) {
+                $varian = [
+                    'sku' => '',
+                    'name' => '',
+                    'id_product' => '0',
+                    'sku_parent' => $dt['sku'],
+                    'parent_name' => $dt['name'],
+                    'id_product_parent' => $dt['id_product'],
+                    'id_parent' => $product['id'],
+                    'img' => $dt['img'] ?? ''
+                ];
+                $item_list[] = $varian;
+            } else {
+                foreach ($item as $v3) {
+                    $varian = [
+                        'sku' => $v3['seller_sku'] ?? '',
+                        'name' => strval($v3['sales_attributes'][0]['value_name'] ?? ''),
+                        'id_product' => $v3['id'] ?? '',
+                        'sku_parent' => $dt['sku'],
+                        'parent_name' => $dt['name'],
+                        'id_product_parent' => $dt['id_product'],
+                        'id_parent' => $product['id']
+                    ];
+                    $sku_img_url = $v3['sales_attributes'][0]['sku_img']['thumb_urls'][0] ?? '';
+                    if ($sku_img_url) {
+                        $file_name = $varian['id_product'] . '.jpg';
+                        $img_dir = './assets/img/product_3rd/' . $file_name;
+                        if (!file_exists($img_dir) || filemtime($img_dir) < strtotime('-7 days')) {
+                            $context = stream_context_create(['http' => ['timeout' => 5, 'ignore_errors' => true]]);
+                            $img_content = @file_get_contents($sku_img_url, false, $context);
+                            if ($img_content !== false) {
+                                file_put_contents($img_dir, $img_content);
+                            }
+                        }
+                        $varian['img'] = $file_name;
+                    }
+                    $item_list[] = $varian;
+                }
+            }
+
+            $dt['json_varian'] = json_encode($item_list, true);
+            $dt['count_varian'] = count($item_list);
+            $dt['updated_at'] = date('Y-m-d H:i:s');
+            $this->db->update('product_3rd', $dt, ['id' => $product['id']]);
+
+            // Save variants
+            foreach ($item_list as $v4) {
+                $var_id_product = $v4['id_product'];
+                $var_id_product_parent = $v4['id_product_parent'];
+                $this->db->select('id');
+                $existing_variant = $this->mymodel->selectDataOne('product_variant_3rd', [
+                    'id_product' => $var_id_product,
+                    'id_product_parent' => $var_id_product_parent,
+                    'marketplace' => $marketplace
+                ]);
+
+                $dtt = [];
+                foreach ($v4 as $k5 => $v5) {
+                    $dtt[$k5] = strval($v5);
+                }
+                $dtt['marketplace'] = $marketplace;
+                $dtt['shop_name'] = $shop_name;
+                $dtt['shop_id'] = $shop_id;
+
+                if (!empty($dtt['sku'])) {
+                    $dat = $this->mymodel->selectDataOne('product_variant_3rd', ['sku' => $dtt['sku']]);
+                    if ($dat) {
+                        $dtt['json'] = strval($dat['json']);
+                    }
+                }
+
+                if ($existing_variant) {
+                    $dtt['updated_at'] = date('Y-m-d H:i:s');
+                    $this->db->update('product_variant_3rd', $dtt, ['id' => $existing_variant['id']]);
+                } else {
+                    $dtt['created_by'] = strval($_SESSION['user']['id'] ?? '');
+                    $dtt['created_at'] = date('Y-m-d H:i:s');
+                    $this->db->insert('product_variant_3rd', $dtt);
+                }
+            }
+
+            $processed_in_chunk++;
+        }
+
+        return [
+            'processed_count' => $current_processed + $processed_in_chunk,
+            'total_products' => $total_products,
+            'has_more' => $has_more,
+            'next_page_token' => $next_token,
+            'current_page' => 0
+        ];
+    }
+
+    /**
+     * Process Shopee products chunk
+     */
+    private function _sync_shopee_chunk($config_data, $shop_id, $shop_name, $current_page, $chunk_size, $current_processed)
+    {
+        $config = json_decode($config_data['val'], true);
+        $partner_id = $this->partner_id_shopee;
+        $partner_key = $this->partner_key_shopee;
+        $access_token = $config['access_token'];
+        $host = 'https://partner.shopeemobile.com';
+        $marketplace = 'SHOPEE';
+        $shop_id_int = intval($shop_id);
+
+        $offset = $current_page * $chunk_size;
+        $processed_in_chunk = 0;
+        $total_products = 0;
+        $has_more = false;
+
+        // Get item list
+        $path = "/api/v2/product/get_item_list";
+        $timest = time();
+        $baseString = sprintf("%s%s%s%s%s", $partner_id, $path, $timest, $access_token, $shop_id_int);
+        $sign = hash_hmac('sha256', $baseString, $partner_key);
+
+        $curl = curl_init();
+        curl_setopt_array($curl, [
+            CURLOPT_URL => $host . $path . '?partner_id=' . $config['partner_id'] . '&timestamp=' . $timest . '&shop_id=' . $shop_id_int . '&access_token=' . $access_token . '&sign=' . $sign . '&offset=' . $offset . '&page_size=' . $chunk_size . '&item_status=NORMAL',
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 60,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_CUSTOMREQUEST => 'GET',
+        ]);
+        $response = curl_exec($curl);
+        curl_close($curl);
+        $response = json_decode($response, true);
+
+        if (isset($response['error']) && !empty($response['error'])) {
+            throw new Exception('Shopee API Error: ' . ($response['message'] ?? $response['error']));
+        }
+
+        $total_products = intval($response['response']['total_count'] ?? 0);
+        $has_more = isset($response['response']['has_next_page']) ? $response['response']['has_next_page'] : false;
+        $items = $response['response']['item'] ?? [];
+
+        if (empty($items)) {
+            return [
+                'processed_count' => $current_processed,
+                'total_products' => $total_products,
+                'has_more' => false,
+                'next_page_token' => '',
+                'current_page' => $current_page
+            ];
+        }
+
+        // Get item base info
+        $list_id = implode(',', array_column($items, 'item_id'));
+
+        $path = "/api/v2/product/get_item_base_info";
+        $timest = time();
+        $baseString = sprintf("%s%s%s%s%s", $partner_id, $path, $timest, $access_token, $shop_id_int);
+        $sign = hash_hmac('sha256', $baseString, $partner_key);
+
+        $curl = curl_init();
+        curl_setopt_array($curl, [
+            CURLOPT_URL => $host . $path . '?access_token=' . $access_token . '&item_id_list=' . $list_id . '&need_complaint_policy=true&need_tax_info=true&partner_id=' . $partner_id . '&shop_id=' . $shop_id_int . '&sign=' . $sign . '&timestamp=' . $timest,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 60,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_CUSTOMREQUEST => 'GET',
+        ]);
+        $response = curl_exec($curl);
+        curl_close($curl);
+        $response = json_decode($response, true);
+
+        $item_list_data = $response['response']['item_list'] ?? [];
+
+        foreach ($item_list_data as $v2) {
+            $id_product = $v2['item_id'];
+            $this->db->select('id');
+            $product = $this->mymodel->selectDataOne('product_3rd', ['id_product' => $id_product, 'marketplace' => $marketplace]);
+
+            $dt = [
+                'marketplace' => $marketplace,
+                'id_product' => $id_product,
+                'name' => strval($v2['item_name'] ?? ''),
+                'desc' => strval($v2['description'] ?? ''),
+                'sku' => strval($v2['item_sku'] ?? ''),
+                'shop_name' => $shop_name,
+                'shop_id' => $shop_id
+            ];
+
+            // Download image
+            $img_url = $v2['image']['image_url_list'][0] ?? '';
+            if ($img_url) {
+                $file_name = $id_product . '.jpg';
+                $img_dir = './assets/img/product_3rd/' . $file_name;
+                if (!file_exists($img_dir) || filemtime($img_dir) < strtotime('-7 days')) {
+                    $context = stream_context_create(['http' => ['timeout' => 5, 'ignore_errors' => true]]);
+                    $img_content = @file_get_contents($img_url, false, $context);
+                    if ($img_content !== false) {
+                        file_put_contents($img_dir, $img_content);
+                    }
+                }
+                $dt['img'] = $file_name;
+            }
+
+            if ($product) {
+                $dt['updated_at'] = date('Y-m-d H:i:s');
+                $this->db->update('product_3rd', $dt, ['id' => $product['id']]);
+            } else {
+                $dt['created_by'] = strval($_SESSION['user']['id'] ?? '');
+                $dt['created_at'] = date('Y-m-d H:i:s');
+                $this->db->insert('product_3rd', $dt);
+                $product['id'] = $this->db->insert_id();
+            }
+
+            // Get models/variants if has_model
+            $item = [];
+            if (intval($v2['has_model'] ?? 0) > 0) {
+                $path = "/api/v2/product/get_model_list";
+                $timest = time();
+                $baseString = sprintf("%s%s%s%s%s", $partner_id, $path, $timest, $access_token, $shop_id_int);
+                $sign = hash_hmac('sha256', $baseString, $partner_key);
+
+                $curl = curl_init();
+                curl_setopt_array($curl, [
+                    CURLOPT_URL => $host . $path . '?access_token=' . $access_token . '&item_id=' . $dt['id_product'] . '&need_complaint_policy=true&need_tax_info=true&partner_id=' . $partner_id . '&shop_id=' . $shop_id_int . '&sign=' . $sign . '&timestamp=' . $timest,
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_TIMEOUT => 30,
+                    CURLOPT_FOLLOWLOCATION => true,
+                    CURLOPT_CUSTOMREQUEST => 'GET',
+                ]);
+                $model_response = curl_exec($curl);
+                curl_close($curl);
+                $model_response = json_decode($model_response, true);
+                $item = $model_response['response']['model'] ?? [];
+            }
+
+            // Process variants
+            $item_list = [];
+            if (empty($item)) {
+                $varian = [
+                    'sku' => '',
+                    'name' => '',
+                    'id_product' => '0',
+                    'sku_parent' => $dt['sku'],
+                    'parent_name' => $dt['name'],
+                    'id_product_parent' => $dt['id_product'],
+                    'id_parent' => $product['id'],
+                    'img' => $dt['img'] ?? ''
+                ];
+                $item_list[] = $varian;
+            } else {
+                foreach ($item as $k3 => $v3) {
+                    $name = $v3['model_name'] ?? '';
+                    if (empty($name)) {
+                        $name = $dt['name'];
+                    }
+                    $varian = [
+                        'sku' => $v3['model_sku'] ?? '',
+                        'name' => strval($name),
+                        'id_product' => $v3['model_id'] ?? '',
+                        'sku_parent' => $dt['sku'],
+                        'parent_name' => $dt['name'],
+                        'id_product_parent' => $dt['id_product'],
+                        'id_parent' => $product['id']
+                    ];
+                    $item_list[] = $varian;
+                }
+            }
+
+            $dt['json_varian'] = json_encode($item_list, true);
+            $dt['count_varian'] = count($item_list);
+            $dt['updated_at'] = date('Y-m-d H:i:s');
+            $this->db->update('product_3rd', $dt, ['id' => $product['id']]);
+
+            // Save variants
+            foreach ($item_list as $v4) {
+                $var_id_product = $v4['id_product'];
+                $var_id_product_parent = $v4['id_product_parent'];
+                $this->db->select('id');
+                $existing_variant = $this->mymodel->selectDataOne('product_variant_3rd', [
+                    'id_product' => $var_id_product,
+                    'id_product_parent' => $var_id_product_parent,
+                    'marketplace' => $marketplace
+                ]);
+
+                $dtt = [];
+                foreach ($v4 as $k5 => $v5) {
+                    $dtt[$k5] = strval($v5);
+                }
+                $dtt['marketplace'] = $marketplace;
+                $dtt['shop_name'] = $shop_name;
+                $dtt['shop_id'] = $shop_id;
+
+                if ($existing_variant) {
+                    $dtt['updated_at'] = date('Y-m-d H:i:s');
+                    $this->db->update('product_variant_3rd', $dtt, ['id' => $existing_variant['id']]);
+                } else {
+                    $dtt['created_by'] = strval($_SESSION['user']['id'] ?? '');
+                    $dtt['created_at'] = date('Y-m-d H:i:s');
+                    $this->db->insert('product_variant_3rd', $dtt);
+                }
+            }
+
+            $processed_in_chunk++;
+        }
+
+        return [
+            'processed_count' => $current_processed + $processed_in_chunk,
+            'total_products' => $total_products,
+            'has_more' => $has_more,
+            'next_page_token' => '',
+            'current_page' => $current_page + 1
+        ];
+    }
+
+    /**
+     * Process Lazada products chunk
+     */
+    private function _sync_lazada_chunk($config_data, $shop_id, $shop_name, $current_page, $chunk_size, $current_processed)
+    {
+        $config = json_decode($config_data['val'], true);
+        $app_key = $this->app_key_lazada;
+        $app_secret = $this->app_secret_lazada;
+        $url = 'https://api.lazada.co.id/rest';
+        $marketplace = 'LAZADA';
+
+        $offset = $current_page * $chunk_size;
+        $processed_in_chunk = 0;
+        $total_products = 0;
+        $has_more = false;
+
+        $c = new LazopClient($url, $app_key, $app_secret);
+        $request = new LazopRequest('/products/get', 'GET');
+        $request->addApiParam('filter', 'all');
+        $request->addApiParam('offset', $offset);
+        $request->addApiParam('limit', $chunk_size);
+        $request->addApiParam('options', '1');
+        $response = $c->execute($request, $config['access_token']);
+        $response = json_decode($response, true);
+
+        if (isset($response['code']) && $response['code'] != '0') {
+            throw new Exception('Lazada API Error: ' . ($response['message'] ?? 'Unknown error'));
+        }
+
+        $total_products = intval($response['data']['total_products'] ?? 0);
+        $products = $response['data']['products'] ?? [];
+        $has_more = ($offset + count($products)) < $total_products;
+
+        foreach ($products as $v2) {
+            $id_product = $v2['item_id'];
+            $this->db->select('id');
+            $product = $this->mymodel->selectDataOne('product_3rd', ['id_product' => $id_product, 'marketplace' => $marketplace]);
+
+            $dt = [
+                'marketplace' => $marketplace,
+                'id_product' => $id_product,
+                'name' => strval($v2['attributes']['name'] ?? ''),
+                'desc' => strval($v2['attributes']['description'] ?? ''),
+                'sku' => '',
+                'shop_name' => $shop_name,
+                'shop_id' => $shop_id
+            ];
+
+            // Download image
+            $img_url = $v2['images'][0] ?? '';
+            if ($img_url) {
+                $file_name = $id_product . '.jpg';
+                $img_dir = './assets/img/product_3rd/' . $file_name;
+                if (!file_exists($img_dir) || filemtime($img_dir) < strtotime('-7 days')) {
+                    $context = stream_context_create(['http' => ['timeout' => 5, 'ignore_errors' => true]]);
+                    $img_content = @file_get_contents($img_url, false, $context);
+                    if ($img_content !== false) {
+                        file_put_contents($img_dir, $img_content);
+                    }
+                }
+                $dt['img'] = $file_name;
+            }
+
+            if ($product) {
+                $dt['updated_at'] = date('Y-m-d H:i:s');
+                $this->db->update('product_3rd', $dt, ['id' => $product['id']]);
+            } else {
+                $dt['created_by'] = strval($_SESSION['user']['id'] ?? '');
+                $dt['created_at'] = date('Y-m-d H:i:s');
+                $this->db->insert('product_3rd', $dt);
+                $product['id'] = $this->db->insert_id();
+            }
+
+            // Process SKUs/variants
+            $item = $v2['skus'] ?? [];
+            $item_list = [];
+            if (empty($item)) {
+                $varian = [
+                    'sku' => '',
+                    'name' => '',
+                    'id_product' => '0',
+                    'sku_parent' => $dt['sku'],
+                    'parent_name' => $dt['name'],
+                    'id_product_parent' => $dt['id_product'],
+                    'id_parent' => $product['id'],
+                    'img' => $dt['img'] ?? ''
+                ];
+                $item_list[] = $varian;
+            } else {
+                foreach ($item as $v3) {
+                    $name = '';
+                    if (isset($v3['saleProp']) && is_array($v3['saleProp'])) {
+                        foreach ($v3['saleProp'] as $v4) {
+                            $name = $v4;
+                        }
+                    }
+                    if (empty($name)) {
+                        $name = $v3['fragrance_family'] ?? '';
+                    }
+
+                    $varian = [
+                        'sku' => $v3['SellerSku'] ?? '',
+                        'name' => strval($name),
+                        'id_product' => $v3['SkuId'] ?? '',
+                        'sku_parent' => $dt['sku'],
+                        'parent_name' => $dt['name'],
+                        'id_product_parent' => $dt['id_product'],
+                        'id_parent' => $product['id']
+                    ];
+
+                    $sku_img_url = $v3['Images'][0] ?? '';
+                    if ($sku_img_url) {
+                        $file_name = $varian['id_product'] . '.jpg';
+                        $img_dir = './assets/img/product_3rd/' . $file_name;
+                        if (!file_exists($img_dir) || filemtime($img_dir) < strtotime('-7 days')) {
+                            $context = stream_context_create(['http' => ['timeout' => 5, 'ignore_errors' => true]]);
+                            $img_content = @file_get_contents($sku_img_url, false, $context);
+                            if ($img_content !== false) {
+                                file_put_contents($img_dir, $img_content);
+                            }
+                        }
+                        $varian['img'] = $file_name;
+                    }
+                    $item_list[] = $varian;
+                }
+            }
+
+            $dt['json_varian'] = json_encode($item_list, true);
+            $dt['count_varian'] = count($item_list);
+            $dt['updated_at'] = date('Y-m-d H:i:s');
+            $this->db->update('product_3rd', $dt, ['id' => $product['id']]);
+
+            // Save variants
+            foreach ($item_list as $v4) {
+                $var_id_product = $v4['id_product'];
+                $var_id_product_parent = $v4['id_product_parent'];
+                $this->db->select('id');
+                $existing_variant = $this->mymodel->selectDataOne('product_variant_3rd', [
+                    'id_product' => $var_id_product,
+                    'id_product_parent' => $var_id_product_parent,
+                    'marketplace' => $marketplace
+                ]);
+
+                $dtt = [];
+                foreach ($v4 as $k5 => $v5) {
+                    $dtt[$k5] = strval($v5);
+                }
+                $dtt['marketplace'] = $marketplace;
+                $dtt['shop_name'] = $shop_name;
+                $dtt['shop_id'] = $shop_id;
+
+                if ($existing_variant) {
+                    $dtt['updated_at'] = date('Y-m-d H:i:s');
+                    $this->db->update('product_variant_3rd', $dtt, ['id' => $existing_variant['id']]);
+                } else {
+                    $dtt['created_by'] = strval($_SESSION['user']['id'] ?? '');
+                    $dtt['created_at'] = date('Y-m-d H:i:s');
+                    $this->db->insert('product_variant_3rd', $dtt);
+                }
+            }
+
+            $processed_in_chunk++;
+        }
+
+        return [
+            'processed_count' => $current_processed + $processed_in_chunk,
+            'total_products' => $total_products,
+            'has_more' => $has_more,
+            'next_page_token' => '',
+            'current_page' => $current_page + 1
+        ];
+    }
+
     function cronjob_influencer()
     {
 
