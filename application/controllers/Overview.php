@@ -49,7 +49,7 @@ class Overview extends CI_Controller
 
             // Provide PIC and Product filter options for KOL overview
             $data['pic_options'] = $this->mymodel->selectWithQuery(
-                "SELECT DISTINCT pic AS name FROM endorse WHERE pic IS NOT NULL AND pic != '' ORDER BY pic ASC"
+                "SELECT * FROM user ORDER BY full_name ASC"
             );
             $data['product_options'] = $this->mymodel->get_product_dropdown_list(array(
                 'status' => array('Aktif', 'ENABLE'),

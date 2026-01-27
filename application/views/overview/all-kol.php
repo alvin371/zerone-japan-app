@@ -296,7 +296,7 @@ if ($_GET['type'] == "Yearly") {
                                     $selected_pics = $_GET['pic'] ?? [];
                                     if (!is_array($selected_pics)) { $selected_pics = [$selected_pics]; }
                                     foreach (($pic_options ?? []) as $opt) :
-                                        $val = is_array($opt) ? ($opt['name'] ?? '') : ($opt->name ?? '');
+                                        $val = is_array($opt) ? ($opt['full_name'] ?? '') : ($opt->full_name ?? '');
                                         if ($val === '') continue;
                                         $sel = in_array($val, $selected_pics) ? 'selected' : '';
                                     ?>

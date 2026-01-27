@@ -904,8 +904,8 @@
                     <?php foreach ($filter_pic as $item): ?>
                         <div>
                             <label style="display: flex; align-items: center; margin-bottom: 8px;">
-                                <input type="checkbox" class="pic-checkbox me-2" value="<?= htmlspecialchars($item['pic']) ?>">
-                                <?= htmlspecialchars($item['pic']) ?>
+                                <input type="checkbox" class="pic-checkbox me-2" value="<?= htmlspecialchars($item['full_name']) ?>">
+                                <?= htmlspecialchars($item['full_name']) ?>
                             </label>
                         </div>
                     <?php endforeach; ?>

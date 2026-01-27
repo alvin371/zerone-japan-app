@@ -70,14 +70,13 @@ class Influencer_dummy extends CI_Controller {
 
         $data['brands'] = $this->db->select('code')->get('brand')->result();
         $data['pics'] = $this->db
-            ->select('full_name')
-            ->where_in('role', [1, 2, 11])
-            ->where('id !=', 1)
+            ->select('*')
+            ->order_by('full_name', 'ASC')
             ->get('user')
             ->result();
         
         $data['niches'] = $this->mymodel->selectWithQuery("SELECT DISTINCT niche FROM niche");
-        $data['filter_pic'] = $this->mymodel->selectWithQuery("SELECT DISTINCT pic FROM influencer_dummy");
+        $data['filter_pic'] = $this->mymodel->selectWithQuery("SELECT * FROM user ORDER BY full_name ASC");
         $data['filter_niche'] = $this->mymodel->selectWithQuery("SELECT DISTINCT niche FROM influencer_dummy");
 
         $data['template'] = $this->template;
