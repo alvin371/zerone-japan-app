@@ -596,12 +596,12 @@ class Ajax extends CI_Controller
 		$last_nonempty_idx = -1;
 		if (!empty($arr_new)) {
 			for ($i = count($arr_new) - 1; $i >= 0; $i--) {
-				$d = $arr_new[$i];
+				$row = $arr_new[$i];
 				$hasData = (
-					(isset($d['val_1']) && (float)$d['val_1'] > 0) || // views
-					(isset($d['val_3']) && (float)$d['val_3'] > 0) || // engagement
-					(isset($d['val_4']) && (float)$d['val_4'] > 0) || // cost
-					(isset($d['val_5']) && (float)$d['val_5'] > 0)    // endorse count
+					(isset($row['val_1']) && (float)$row['val_1'] > 0) || // views
+					(isset($row['val_3']) && (float)$row['val_3'] > 0) || // engagement
+					(isset($row['val_4']) && (float)$row['val_4'] > 0) || // cost
+					(isset($row['val_5']) && (float)$row['val_5'] > 0)    // endorse count
 				);
 				if ($hasData) { $last_nonempty_idx = $i; break; }
 			}
