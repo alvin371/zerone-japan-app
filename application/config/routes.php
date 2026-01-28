@@ -88,6 +88,9 @@ $route['api/webhook'] = 'Api_v2/webhook';
 $route['api/customer/summary'] = 'Api_v2/customer_summary';
 $route['cronjob/expense'] = 'Expense/generate_recurring_expense';
 
+// Migration runner (admin only)
+$route['migration/run'] = 'Migration/run';
+
 $route['endorse/action_generate_mou_pdf_gdocs'] = 'googlemou/action_generate_mou_pdf'; 
 $route['googlemou/oauth2callback']              = 'googlemou/oauth2callback';
 $route['googlemou']                             = 'googlemou/index';
@@ -158,4 +161,3 @@ $route['migrate'] = 'Migrate/index';
 $route['migrate/run'] = 'Migrate/run';
 $route['migrate/run/(:any)'] = 'Migrate/run_single/$1';
 $route['migrate/rollback/(:any)'] = 'Migrate/rollback/$1';
-
