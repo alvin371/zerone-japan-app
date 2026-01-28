@@ -489,8 +489,9 @@ class Roles extends BaseController
             // MARKETING MODULES
             // =========================================================================
 
-            // Marketing overview and reporting
-            'marketing' => ['view'],  // Maps to Overview.php controller
+            // Marketing parent and overview
+            'marketing' => ['view'],  // Parent tab
+            'overview' => ['view'],   // Overview.php controller
 
             // Influencer management
             'influencer' => ['view', 'create', 'edit', 'delete'],
@@ -602,7 +603,7 @@ class Roles extends BaseController
             ),
 
             'Marketing' => array(
-                'marketing',  // Overview.php controller
+                'marketing', 'overview',
                 'influencer', 'influencer_dummy',
                 'endorse', 'endorse_campaign', 'review_endorse',
                 'payment', 'calendar',
