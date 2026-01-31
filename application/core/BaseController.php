@@ -45,7 +45,8 @@ class BaseController extends CI_Controller
         'modules' => 'modules',
         'user' => 'user',
         'profile' => 'profile',
-        'scraper' => 'scraper'
+        'scraper' => 'scraper',
+        'cronjob_log' => 'cronjob_log'
     ];
     
     // Method to permission action mapping

@@ -302,6 +302,11 @@ class Product_3rd extends CI_Controller
 
     public function sync_all_product()
     {
+        // Initialize cronjob logger
+        $this->load->library('cronjob_logger');
+        $trigger_source = $this->cronjob_logger->detect_trigger_source();
+        $this->cronjob_logger->start('sync_all_product', 'sync', $trigger_source);
+
         // Ambil semua toko yang aktif dari database
         $stores = $this->mymodel->selectWithQuery("
             SELECT * FROM marketplace_config
@@ -310,6 +315,7 @@ class Product_3rd extends CI_Controller
 
         // Jika tidak ada toko aktif
         if (empty($stores)) {
+            $this->cronjob_logger->complete(0, 0, 0, 0, ['error' => 'No active stores found']);
             echo 'Tidak ada toko aktif yang ditemukan';
             die;
         }
@@ -352,9 +358,17 @@ class Product_3rd extends CI_Controller
                 $results[] = "ERROR: {$marketplace} (Shop ID: {$shop_id}) - " . $errorMsg;
             }
 
+            // Update progress
+            $this->cronjob_logger->update_progress($successCount, $errorCount, count($stores));
+
             // Beri jeda 3 detik antar request untuk menghindari rate limit
             sleep(3);
         }
+
+        // Complete logging
+        $this->cronjob_logger->complete(count($stores), $successCount, $errorCount, 0, [
+            'results' => $results
+        ]);
 
         // Hasil akhir
         $output = "Sync All Process Completed\n";

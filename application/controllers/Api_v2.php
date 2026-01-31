@@ -4795,7 +4795,9 @@ class Api_v2 extends CI_Controller
 
     function cronjob_influencer()
     {
-
+        // Initialize cronjob logger
+        $this->load->library('cronjob_logger');
+        $trigger_source = $this->cronjob_logger->detect_trigger_source();
 
         $user = $_SESSION['user'];
 
@@ -4816,6 +4818,10 @@ class Api_v2 extends CI_Controller
                 die;
             }
         }
+
+        // Start logging
+        $this->cronjob_logger->start('cronjob_influencer', 'sync', $trigger_source);
+
         $today = DATE("Y-m-d");
         $today = DATE('Y-m-d', strtotime($today . " -7 days"));
         $todayy = $today;
@@ -4963,6 +4969,12 @@ class Api_v2 extends CI_Controller
                 }
             }
         }
+
+        // Complete logging
+        $this->cronjob_logger->complete(count($list), count($list), 0, 0, [
+            'sync_date' => $todayy
+        ]);
+
         header('Content-Type: application/json; charset=utf-8');
         $html = array();
         $html['status'] = true;
@@ -4974,6 +4986,10 @@ class Api_v2 extends CI_Controller
 
     function cronjob_influencer_dummy()
     {
+        // Initialize cronjob logger
+        $this->load->library('cronjob_logger');
+        $trigger_source = $this->cronjob_logger->detect_trigger_source();
+
         $user = isset($_SESSION['user']) ? $_SESSION['user'] : null;
 
         $mode = isset($_GET['mode']) ? strval($_GET['mode']) : '';
@@ -4994,6 +5010,9 @@ class Api_v2 extends CI_Controller
                 die;
             }
         }
+
+        // Start logging
+        $this->cronjob_logger->start('cronjob_influencer_dummy', 'sync', $trigger_source);
 
         $today = DATE("Y-m-d");
         $sync_date = DATE('Y-m-d', strtotime($today . " -7 days"));
@@ -5084,6 +5103,12 @@ class Api_v2 extends CI_Controller
             $this->db->update('influencer_dummy', $dt_2, array('id' => $id));
             $processed++;
         }
+
+        // Complete logging
+        $skipped = count($list) - $processed;
+        $this->cronjob_logger->complete(count($list), $processed, 0, $skipped, [
+            'sync_date' => $sync_date
+        ]);
 
         header('Content-Type: application/json; charset=utf-8');
         $html = array();
@@ -5224,7 +5249,9 @@ class Api_v2 extends CI_Controller
 
     function cronjob_endorse()
     {
-
+        // Initialize cronjob logger
+        $this->load->library('cronjob_logger');
+        $trigger_source = $this->cronjob_logger->detect_trigger_source();
 
         $user = $_SESSION['user'];
 
@@ -5245,6 +5272,10 @@ class Api_v2 extends CI_Controller
                 die;
             }
         }
+
+        // Start logging
+        $this->cronjob_logger->start('cronjob_endorse', 'sync', $trigger_source);
+
         $today = DATE("Y-m-d");
         // $today = DATE('Y-m-d', strtotime($today . " -1 days"));
         $todayy = $today;
@@ -5416,12 +5447,18 @@ class Api_v2 extends CI_Controller
         }
 
         $data = $this->mymodel->selectWithQuery("SELECT id
-        FROM endorse_campaign 
+        FROM endorse_campaign
         WHERE status = 'Aktif'");
         foreach ($data as $k => $v) {
             $id_parent = $v['id'];
             $this->update_endorse_parent($id_parent, $v);
         }
+
+        // Complete logging
+        $this->cronjob_logger->complete(count($list), count($list), 0, 0, [
+            'sync_date' => $todayy,
+            'campaigns_updated' => count($data)
+        ]);
 
         header('Content-Type: application/json; charset=utf-8');
         $html = array();
@@ -5581,7 +5618,9 @@ class Api_v2 extends CI_Controller
 
     function cronjob_endorse_campaign()
     {
-
+        // Initialize cronjob logger
+        $this->load->library('cronjob_logger');
+        $trigger_source = $this->cronjob_logger->detect_trigger_source();
 
         $user = $_SESSION['user'];
 
@@ -5602,6 +5641,10 @@ class Api_v2 extends CI_Controller
                 die;
             }
         }
+
+        // Start logging
+        $this->cronjob_logger->start('cronjob_endorse_campaign', 'update', $trigger_source);
+
         $today = DATE("Y-m-d");
         $today = DATE('Y-m-d', strtotime($today . " -1 days"));
         $todayy = $today;
@@ -5615,7 +5658,10 @@ class Api_v2 extends CI_Controller
             $this->update_endorse_parent($id_parent, $vl);
         }
 
-
+        // Complete logging
+        $this->cronjob_logger->complete(count($list), count($list), 0, 0, [
+            'sync_date' => $todayy
+        ]);
 
         header('Content-Type: application/json; charset=utf-8');
         $html = array();
