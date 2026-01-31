@@ -156,6 +156,12 @@ $route['auth/callback'] = 'TiktokAuth/callback';
 $route['cronjob/expense'] = 'Api_v3/generate_recurring_expense';
 $route['cronjob/sync-product'] = 'Api_v3/sync_all_product';
 
+// Cronjob Logs
+$route['cronjob-log'] = 'Cronjob_log/index';
+$route['cronjob-log/item'] = 'Cronjob_log/item';
+$route['cronjob-log/detail'] = 'Cronjob_log/detail';
+$route['cronjob-log/clear'] = 'Cronjob_log/clear_logs';
+
 // Migrations
 $route['migrate'] = 'Migrate/index';
 $route['migrate/run'] = 'Migrate/run';

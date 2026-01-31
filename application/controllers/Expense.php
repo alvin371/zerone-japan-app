@@ -712,6 +712,14 @@ class Expense extends BaseController
 
     public function generate_recurring_expense()
     {
+        // Initialize cronjob logger
+        $this->load->library('cronjob_logger');
+        $trigger_source = $this->cronjob_logger->detect_trigger_source();
+        $this->cronjob_logger->start('generate_recurring_expense', 'generate', $trigger_source);
+
+        $processed = 0;
+        $skipped = 0;
+
         $expenses = $this->mymodel->selectWithQuery("SELECT * FROM expense WHERE is_recurring = 1");
         foreach ($expenses as $expense) {
             $last_generated_at = $expense['last_generated_at'];
@@ -748,9 +756,18 @@ class Expense extends BaseController
                 $this->db->insert('expense', $new_expense);
 
                 $this->db->where('id', $expense['id'])->update('expense', ['last_generated_at' => $next_date]);
+                $processed++;
+            } else {
+                $skipped++;
             }
         }
-        echo "Recurring expenses generated successfully.";
+
+        // Complete logging
+        $this->cronjob_logger->complete(count($expenses), $processed, 0, $skipped, [
+            'generated_date' => date('Y-m-d')
+        ]);
+
+        echo "Recurring expenses generated successfully. Processed: $processed, Skipped: $skipped";
     }
 
     private function get_next_date($last_date, $recurring_type, $expense)

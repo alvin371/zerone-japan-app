@@ -6415,6 +6415,11 @@ class Api extends CI_Controller
 
     function cronjob_update_customer()
     {
+        // Initialize cronjob logger
+        $this->load->library('cronjob_logger');
+        $trigger_source = $this->cronjob_logger->detect_trigger_source();
+        $this->cronjob_logger->start('cronjob_update_customer', 'update', $trigger_source);
+
         $success_count = 0;
         $failed_count = 0;
 
@@ -6445,6 +6450,9 @@ class Api extends CI_Controller
                 log_message('error', 'Failed to update customer ' . $customer['id'] . ': ' . $e->getMessage());
             }
         }
+
+        // Complete logging
+        $this->cronjob_logger->complete(count($customers), $success_count, $failed_count, 0);
 
         // Return the formatted response
         $response = "[CRON] Customer Scrape Update - Success: $success_count | Failed: $failed_count";
