@@ -157,7 +157,7 @@ class Cronjob_log extends BaseController
         $data['data'] = $this->mymodel->selectWithQuery("
             SELECT
                 cl.*,
-                u.name as triggered_by_name
+                u.full_name as triggered_by_name
             FROM cronjob_logs cl
             LEFT JOIN user u ON cl.triggered_by = u.id
             WHERE $where
@@ -193,7 +193,7 @@ class Cronjob_log extends BaseController
         $log = $this->mymodel->selectWithQuery("
             SELECT
                 cl.*,
-                u.name as triggered_by_name
+                u.full_name as triggered_by_name
             FROM cronjob_logs cl
             LEFT JOIN user u ON cl.triggered_by = u.id
             WHERE cl.id = " . intval($id) . "
