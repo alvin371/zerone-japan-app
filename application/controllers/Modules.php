@@ -608,6 +608,10 @@ class Modules extends BaseController
         $result = $this->mymodel->insertData('modules', $data);
 
         if ($result) {
+            $module_id = (int) $this->db->insert_id();
+            if ($module_id > 0) {
+                $this->permission->refresh_module_permissions($module_id);
+            }
             echo json_encode(['status' => 'success', 'message' => 'Module created successfully']);
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Failed to create module']);
@@ -636,6 +640,7 @@ class Modules extends BaseController
         $result = $this->mymodel->updateData('modules', $data, ['id' => $id]);
 
         if ($result) {
+            $this->permission->refresh_module_permissions($id);
             echo json_encode(['status' => 'success', 'message' => 'Module updated successfully']);
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Failed to update module']);
@@ -662,6 +667,7 @@ class Modules extends BaseController
         $result = $this->mymodel->deleteData('modules', ['id' => $id]);
 
         if ($result) {
+            $this->permission->refresh_module_permissions($id);
             echo json_encode(['status' => 'success', 'message' => 'Module deleted successfully']);
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Failed to delete module']);
