@@ -11,6 +11,9 @@ class Permission
 {
     protected $CI;
     protected $user_permissions_cache = [];
+    protected $permissions_view_name;
+    protected $permissions_view_type;
+    private const ALLOWED_ACTIONS = ['view', 'create', 'edit', 'delete', 'approve'];
     
     public function __construct()
     {
@@ -28,6 +31,8 @@ class Permission
      */
     public function check_permission($user_id, $module_name, $action = 'view')
     {
+        $action = $this->normalize_action($action);
+
         // Cache key for performance
         $cache_key = "{$user_id}_{$module_name}_{$action}";
         
@@ -40,15 +45,18 @@ class Permission
             // Use fallback role-based system
             $has_permission = $this->fallback_permission_check($user_id, $module_name, $action);
         } else {
+            $permissions_view = $this->resolve_permissions_view_name();
+            if ($permissions_view === '') {
+                $has_permission = $this->fallback_permission_check($user_id, $module_name, $action);
+            } else {
             // Use the role-based permission system
             try {
                 // Use the view for easy permission checking
-                $result = $this->CI->mymodel->selectWithQuery("
-                    SELECT can_{$action} as has_permission
-                    FROM user_module_permissions 
-                    WHERE user_id = '$user_id' AND module_name = '$module_name'
-                    LIMIT 1
-                ");
+                $query = "SELECT can_{$action} as has_permission
+                    FROM {$permissions_view}
+                    WHERE user_id = ? AND module_name = ?
+                    LIMIT 1";
+                $result = $this->select_with_bindings($query, [$user_id, $module_name]);
                 
                 if (empty($result)) {
                     // No permission found, use fallback
@@ -59,6 +67,7 @@ class Permission
             } catch (Exception $e) {
                 // If any error occurs, use fallback
                 $has_permission = $this->fallback_permission_check($user_id, $module_name, $action);
+            }
             }
         }
         
@@ -78,13 +87,19 @@ class Permission
     public function has_module_access($user_id, $controller)
     {
         try {
-            $result = $this->CI->mymodel->selectWithQuery("
-                SELECT COUNT(*) as count
-                FROM user_module_permissions 
-                WHERE user_id = $user_id 
-                AND controller = '$controller' 
-                AND (can_view = 1 OR can_create = 1 OR can_edit = 1 OR can_delete = 1)
-            ");
+            $permissions_view = $this->resolve_permissions_view_name();
+            if ($permissions_view === '') {
+                return $this->fallback_permission_check($user_id, $controller, 'view');
+            }
+
+            $result = $this->select_with_bindings(
+                "SELECT COUNT(*) as count
+                FROM {$permissions_view}
+                WHERE user_id = ?
+                AND controller = ?
+                AND (can_view = 1 OR can_create = 1 OR can_edit = 1 OR can_delete = 1)",
+                [$user_id, $controller]
+            );
             
             return !empty($result) && $result[0]['count'] > 0;
         } catch (Exception $e) {
@@ -102,8 +117,13 @@ class Permission
     public function get_user_permissions($user_id)
     {
         try {
-            return $this->CI->mymodel->selectWithQuery("
-                SELECT 
+            $permissions_view = $this->resolve_permissions_view_name();
+            if ($permissions_view === '') {
+                return [];
+            }
+
+            return $this->select_with_bindings(
+                "SELECT
                     module_name,
                     module_display_name,
                     controller,
@@ -114,11 +134,12 @@ class Permission
                     can_delete,
                     can_approve,
                     has_override
-                FROM user_module_permissions 
-                WHERE user_id = $user_id
+                FROM {$permissions_view}
+                WHERE user_id = ?
                 AND (can_view = 1 OR can_create = 1 OR can_edit = 1 OR can_delete = 1 OR can_approve = 1)
-                ORDER BY module_name
-            ");
+                ORDER BY module_name",
+                [$user_id]
+            );
         } catch (Exception $e) {
             // Return basic permissions for fallback
             return [];
@@ -133,7 +154,12 @@ class Permission
      */
     public function get_user_sidebar_modules($user_id)
     {
-        $permissions = $this->CI->mymodel->selectWithQuery("
+        $permissions_view = $this->resolve_permissions_view_name();
+        if ($permissions_view === '') {
+            return [];
+        }
+
+        $permissions = $this->select_with_bindings("
             SELECT 
                 m.id,
                 m.name,
@@ -147,7 +173,7 @@ class Permission
                 ump.can_edit,
                 ump.can_delete
             FROM modules m
-            LEFT JOIN user_module_permissions ump ON m.id = ump.module_id AND ump.user_id = ?
+            LEFT JOIN {$permissions_view} ump ON m.id = ump.module_id AND ump.user_id = ?
             WHERE m.is_active = 1 
             AND (ump.can_view = 1 OR ump.can_create = 1 OR ump.can_edit = 1 OR ump.can_delete = 1)
             ORDER BY m.sort_order, m.display_name
@@ -188,11 +214,8 @@ class Permission
     public function can_access_current($user_id, $action = 'view')
     {
         $controller = $this->CI->router->fetch_class();
-        
-        // Map controller to module name
-        $module_mapping = $this->get_controller_module_mapping();
-        $module_name = isset($module_mapping[$controller]) ? $module_mapping[$controller] : $controller;
-        
+        $module_name = $this->resolve_module_name($controller);
+
         return $this->check_permission($user_id, $module_name, $action);
     }
     
@@ -209,8 +232,13 @@ class Permission
             $roles = $this->CI->mymodel->selectWithQuery("SHOW TABLES LIKE 'roles'");
             $role_permissions = $this->CI->mymodel->selectWithQuery("SHOW TABLES LIKE 'role_permissions'");
             $user_roles = $this->CI->mymodel->selectWithQuery("SHOW TABLES LIKE 'user_roles'");
+            $permissions_view = $this->resolve_permissions_view_name();
             
-            return !empty($modules) && !empty($roles) && !empty($role_permissions) && !empty($user_roles);
+            return !empty($modules)
+                && !empty($roles)
+                && !empty($role_permissions)
+                && !empty($user_roles)
+                && $permissions_view !== '';
         } catch (Exception $e) {
             return false;
         }
@@ -227,31 +255,33 @@ class Permission
      */
     private function fallback_permission_check($user_id, $module_name, $action)
     {
+        $action = $this->normalize_action($action);
+
         try {
             // Query user permissions through role_permissions table
-            $result = $this->CI->mymodel->selectWithQuery("
-                SELECT MAX(rp.can_{$action}) as has_permission
+            $query = "SELECT MAX(rp.can_{$action}) as has_permission
                 FROM user u
                 INNER JOIN user_roles ur ON u.id = ur.user_id
                 INNER JOIN roles r ON ur.role_id = r.id AND r.is_active = 1
                 INNER JOIN role_permissions rp ON r.id = rp.role_id
                 INNER JOIN modules m ON rp.module_id = m.id AND m.is_active = 1
-                WHERE u.id = $user_id
-                AND m.name = '$module_name'
-                GROUP BY u.id, m.name
-            ");
+                WHERE u.id = ?
+                AND m.name = ?
+                GROUP BY u.id, m.name";
+            $result = $this->select_with_bindings($query, [$user_id, $module_name]);
 
             if (!empty($result) && isset($result[0]['has_permission'])) {
                 return $result[0]['has_permission'] == 1;
             }
 
             // If no specific permission found, check if user has admin role
-            $user_roles = $this->CI->mymodel->selectWithQuery("
-                SELECT r.name, r.level
+            $user_roles = $this->select_with_bindings(
+                "SELECT r.name, r.level
                 FROM user_roles ur
                 INNER JOIN roles r ON ur.role_id = r.id
-                WHERE ur.user_id = $user_id AND r.is_active = 1
-            ");
+                WHERE ur.user_id = ? AND r.is_active = 1",
+                [$user_id]
+            );
 
             // Super admin and admin roles get full access
             foreach ($user_roles as $role) {
@@ -270,9 +300,10 @@ class Permission
 
         } catch (Exception $e) {
             // Last resort: use old role-based system
-            $user = $this->CI->mymodel->selectWithQuery("
-                SELECT role FROM user WHERE id = $user_id LIMIT 1
-            ");
+            $user = $this->select_with_bindings(
+                "SELECT role FROM user WHERE id = ? LIMIT 1",
+                [$user_id]
+            );
 
             if (empty($user)) {
                 return false;
@@ -300,44 +331,339 @@ class Permission
      * 
      * @return array
      */
-    private function get_controller_module_mapping()
+    private function resolve_module_name($controller)
     {
-        return [
+        if ($controller === 'ads') {
+            $platform = $this->CI->input->get('m');
+            return $platform ? "ads_" . strtolower($platform) : 'overview';
+        }
+
+        if ($controller === 'crm') {
+            $brand = $this->CI->input->get('brand');
+            return $brand ? "crm_" . strtolower($brand) : 'crm_mg';
+        }
+
+        $controller_module_map = [
             'dashboard' => 'dashboard',
             'report' => 'report',
             'expense' => 'expense',
             'overview' => 'overview',
-            'ads' => 'advertiser', // Special handling for ads with parameters
             'influencer' => 'influencer',
             'influencer_dummy' => 'influencer_dummy',
             'endorse_campaign' => 'endorse_campaign',
+            'endorse' => 'endorse_campaign',
             'calendar' => 'calendar',
             'payment' => 'payment',
             'codeboost' => 'codeboost',
             'marketplace_account' => 'marketplace_account',
             'transaction' => 'transaction',
             'transaction_item' => 'transaction_item',
-            'crm' => 'crm_mg', // Default, may need brand parameter handling
             'group_wa' => 'group_wa',
             'stock' => 'stock',
             'product' => 'product',
             'product_3rd' => 'product_3rd',
-            'discount' => 'discount',
-            'marketplace' => 'marketplace',
-            'shipping' => 'shipping',
             'quest_level' => 'quest_level',
             'position' => 'position',
+            'roles' => 'roles',
             'benefit' => 'benefit',
             'quest' => 'quest',
             'milestone' => 'milestone',
+            'modules' => 'modules',
             'user' => 'user',
             'profile' => 'profile',
-            'customer' => 'customer',
-            'label' => 'label',
-            'testimoni' => 'testimoni',
             'scraper' => 'scraper',
-            'meta_account' => 'meta_account'
+            'cronjob_log' => 'cronjob_log',
+            'recruitment' => 'recruitment'
         ];
+
+        return $controller_module_map[$controller] ?? $controller;
+    }
+
+    private function normalize_action($action)
+    {
+        $action = strtolower(trim((string)$action));
+        return in_array($action, self::ALLOWED_ACTIONS, true) ? $action : 'view';
+    }
+
+    public function get_permissions_view_name()
+    {
+        $name = $this->resolve_permissions_view_name();
+        return $name !== '' ? $name : null;
+    }
+
+    public function refresh_user_permissions($user_id)
+    {
+        if (!$this->can_write_permissions_table()) {
+            return false;
+        }
+
+        $table = $this->resolve_permissions_view_name();
+        $this->select_with_bindings("DELETE FROM {$table} WHERE user_id = ?", [$user_id]);
+
+        $insert_query = "INSERT INTO {$table} (
+                user_id, user_name, legacy_role, module_id, module_name, module_display_name, controller, parent_id,
+                can_view, can_create, can_edit, can_delete, can_approve, has_override, assigned_roles, role_levels
+            )
+            SELECT
+                u.id,
+                u.full_name,
+                u.role,
+                m.id,
+                m.name,
+                m.display_name,
+                m.controller,
+                m.parent_id,
+                COALESCE(upo.can_view, rp.can_view, 0),
+                COALESCE(upo.can_create, rp.can_create, 0),
+                COALESCE(upo.can_edit, rp.can_edit, 0),
+                COALESCE(upo.can_delete, rp.can_delete, 0),
+                COALESCE(upo.can_approve, rp.can_approve, 0),
+                CASE WHEN upo.user_id IS NULL THEN 0 ELSE 1 END,
+                COALESCE(ura.assigned_roles, '[]'),
+                COALESCE(ura.role_levels, '[]')
+            FROM user u
+            CROSS JOIN (
+                SELECT id, name, display_name, controller, parent_id
+                FROM modules
+                WHERE is_active = 1
+            ) m
+            LEFT JOIN (
+                SELECT
+                    ur.user_id,
+                    rp.module_id,
+                    MAX(rp.can_view) AS can_view,
+                    MAX(rp.can_create) AS can_create,
+                    MAX(rp.can_edit) AS can_edit,
+                    MAX(rp.can_delete) AS can_delete,
+                    MAX(rp.can_approve) AS can_approve
+                FROM user_roles ur
+                INNER JOIN roles r ON ur.role_id = r.id AND r.is_active = 1
+                INNER JOIN role_permissions rp ON r.id = rp.role_id
+                WHERE ur.user_id = ?
+                GROUP BY ur.user_id, rp.module_id
+            ) rp ON rp.user_id = u.id AND rp.module_id = m.id
+            LEFT JOIN user_permission_overrides upo ON upo.user_id = u.id AND upo.module_id = m.id
+            LEFT JOIN (
+                SELECT
+                    ur.user_id,
+                    CONCAT('[', GROUP_CONCAT(DISTINCT JSON_QUOTE(r.name) ORDER BY r.level DESC SEPARATOR ','), ']') AS assigned_roles,
+                    CONCAT('[', GROUP_CONCAT(DISTINCT r.level ORDER BY r.level DESC SEPARATOR ','), ']') AS role_levels
+                FROM user_roles ur
+                INNER JOIN roles r ON ur.role_id = r.id AND r.is_active = 1
+                WHERE ur.user_id = ?
+                GROUP BY ur.user_id
+            ) ura ON ura.user_id = u.id
+            WHERE u.id = ?";
+
+        $this->select_with_bindings($insert_query, [$user_id, $user_id, $user_id]);
+
+        $this->clear_user_cache($user_id);
+        return true;
+    }
+
+    public function refresh_role_permissions($role_id)
+    {
+        $users = $this->select_with_bindings(
+            "SELECT user_id FROM user_roles WHERE role_id = ?",
+            [$role_id]
+        );
+
+        $count = 0;
+        foreach ($users as $user) {
+            if ($this->refresh_user_permissions((int) $user['user_id'])) {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    public function refresh_module_permissions($module_id)
+    {
+        if (!$this->can_write_permissions_table()) {
+            return false;
+        }
+
+        $table = $this->resolve_permissions_view_name();
+        $this->select_with_bindings("DELETE FROM {$table} WHERE module_id = ?", [$module_id]);
+
+        $insert_query = "INSERT INTO {$table} (
+                user_id, user_name, legacy_role, module_id, module_name, module_display_name, controller, parent_id,
+                can_view, can_create, can_edit, can_delete, can_approve, has_override, assigned_roles, role_levels
+            )
+            SELECT
+                u.id,
+                u.full_name,
+                u.role,
+                m.id,
+                m.name,
+                m.display_name,
+                m.controller,
+                m.parent_id,
+                COALESCE(upo.can_view, rp.can_view, 0),
+                COALESCE(upo.can_create, rp.can_create, 0),
+                COALESCE(upo.can_edit, rp.can_edit, 0),
+                COALESCE(upo.can_delete, rp.can_delete, 0),
+                COALESCE(upo.can_approve, rp.can_approve, 0),
+                CASE WHEN upo.user_id IS NULL THEN 0 ELSE 1 END,
+                COALESCE(ura.assigned_roles, '[]'),
+                COALESCE(ura.role_levels, '[]')
+            FROM user u
+            INNER JOIN modules m ON m.id = ? AND m.is_active = 1
+            LEFT JOIN (
+                SELECT
+                    ur.user_id,
+                    rp.module_id,
+                    MAX(rp.can_view) AS can_view,
+                    MAX(rp.can_create) AS can_create,
+                    MAX(rp.can_edit) AS can_edit,
+                    MAX(rp.can_delete) AS can_delete,
+                    MAX(rp.can_approve) AS can_approve
+                FROM user_roles ur
+                INNER JOIN roles r ON ur.role_id = r.id AND r.is_active = 1
+                INNER JOIN role_permissions rp ON r.id = rp.role_id
+                WHERE rp.module_id = ?
+                GROUP BY ur.user_id, rp.module_id
+            ) rp ON rp.user_id = u.id AND rp.module_id = m.id
+            LEFT JOIN user_permission_overrides upo ON upo.user_id = u.id AND upo.module_id = m.id
+            LEFT JOIN (
+                SELECT
+                    ur.user_id,
+                    CONCAT('[', GROUP_CONCAT(DISTINCT JSON_QUOTE(r.name) ORDER BY r.level DESC SEPARATOR ','), ']') AS assigned_roles,
+                    CONCAT('[', GROUP_CONCAT(DISTINCT r.level ORDER BY r.level DESC SEPARATOR ','), ']') AS role_levels
+                FROM user_roles ur
+                INNER JOIN roles r ON ur.role_id = r.id AND r.is_active = 1
+                GROUP BY ur.user_id
+            ) ura ON ura.user_id = u.id;";
+
+        $this->select_with_bindings($insert_query, [$module_id, $module_id]);
+
+        $this->clear_user_cache();
+        return true;
+    }
+
+    public function refresh_all_permissions()
+    {
+        if (!$this->can_write_permissions_table()) {
+            return false;
+        }
+
+        $table = $this->resolve_permissions_view_name();
+        $this->select_with_bindings("TRUNCATE TABLE {$table}", []);
+
+        $insert_query = "INSERT INTO {$table} (
+                user_id, user_name, legacy_role, module_id, module_name, module_display_name, controller, parent_id,
+                can_view, can_create, can_edit, can_delete, can_approve, has_override, assigned_roles, role_levels
+            )
+            SELECT
+                u.id,
+                u.full_name,
+                u.role,
+                m.id,
+                m.name,
+                m.display_name,
+                m.controller,
+                m.parent_id,
+                COALESCE(upo.can_view, rp.can_view, 0),
+                COALESCE(upo.can_create, rp.can_create, 0),
+                COALESCE(upo.can_edit, rp.can_edit, 0),
+                COALESCE(upo.can_delete, rp.can_delete, 0),
+                COALESCE(upo.can_approve, rp.can_approve, 0),
+                CASE WHEN upo.user_id IS NULL THEN 0 ELSE 1 END,
+                COALESCE(ura.assigned_roles, '[]'),
+                COALESCE(ura.role_levels, '[]')
+            FROM user u
+            CROSS JOIN (
+                SELECT id, name, display_name, controller, parent_id
+                FROM modules
+                WHERE is_active = 1
+            ) m
+            LEFT JOIN (
+                SELECT
+                    ur.user_id,
+                    rp.module_id,
+                    MAX(rp.can_view) AS can_view,
+                    MAX(rp.can_create) AS can_create,
+                    MAX(rp.can_edit) AS can_edit,
+                    MAX(rp.can_delete) AS can_delete,
+                    MAX(rp.can_approve) AS can_approve
+                FROM user_roles ur
+                INNER JOIN roles r ON ur.role_id = r.id AND r.is_active = 1
+                INNER JOIN role_permissions rp ON r.id = rp.role_id
+                GROUP BY ur.user_id, rp.module_id
+            ) rp ON rp.user_id = u.id AND rp.module_id = m.id
+            LEFT JOIN user_permission_overrides upo ON upo.user_id = u.id AND upo.module_id = m.id
+            LEFT JOIN (
+                SELECT
+                    ur.user_id,
+                    CONCAT('[', GROUP_CONCAT(DISTINCT JSON_QUOTE(r.name) ORDER BY r.level DESC SEPARATOR ','), ']') AS assigned_roles,
+                    CONCAT('[', GROUP_CONCAT(DISTINCT r.level ORDER BY r.level DESC SEPARATOR ','), ']') AS role_levels
+                FROM user_roles ur
+                INNER JOIN roles r ON ur.role_id = r.id AND r.is_active = 1
+                GROUP BY ur.user_id
+            ) ura ON ura.user_id = u.id;";
+
+        $this->select_with_bindings($insert_query, []);
+        $this->clear_user_cache();
+        return true;
+    }
+
+    public function purge_user_permissions($user_id)
+    {
+        if (!$this->can_write_permissions_table()) {
+            return false;
+        }
+
+        $table = $this->resolve_permissions_view_name();
+        $this->select_with_bindings("DELETE FROM {$table} WHERE user_id = ?", [$user_id]);
+        $this->clear_user_cache($user_id);
+        return true;
+    }
+
+    private function resolve_permissions_view_name()
+    {
+        $this->resolve_permissions_table_info();
+
+        if ($this->permissions_view_name !== null) {
+            return $this->permissions_view_name;
+        }
+
+        return '';
+    }
+
+    private function select_with_bindings($query, array $bindings)
+    {
+        $result = $this->CI->db->query($query, $bindings);
+        if (is_bool($result)) {
+            return [];
+        }
+        return $result->result_array();
+    }
+
+    private function resolve_permissions_table_info()
+    {
+        if ($this->permissions_view_name !== null) {
+            return;
+        }
+
+        $candidates = ['user_module_permissions', 'user_model_permission'];
+        foreach ($candidates as $candidate) {
+            $result = $this->CI->mymodel->selectWithQuery("SHOW FULL TABLES LIKE '{$candidate}'");
+            if (!empty($result)) {
+                $this->permissions_view_name = $candidate;
+                $this->permissions_view_type = $result[0]['Table_type'] ?? 'UNKNOWN';
+                return;
+            }
+        }
+
+        $this->permissions_view_name = '';
+        $this->permissions_view_type = '';
+    }
+
+    private function can_write_permissions_table()
+    {
+        $this->resolve_permissions_table_info();
+        return $this->permissions_view_name !== '' && strtoupper($this->permissions_view_type) === 'BASE TABLE';
     }
     
     /**

@@ -414,6 +414,7 @@ class User extends BaseController
                 'assigned_by' => $user['id']
             );
             $this->db->insert('user_roles', $role_assignment);
+            $this->permission->refresh_user_permissions($id);
             
             // Handle user profile data
             $profile_data = $_POST['profile'] ?? array();
@@ -584,6 +585,7 @@ class User extends BaseController
                 'assigned_by' => $user['id']
             );
             $this->db->insert('user_roles', $role_assignment);
+            $this->permission->refresh_user_permissions($user_id);
             
             // Handle user profile data
             $profile_data = $_POST['profile'] ?? array();
@@ -700,6 +702,7 @@ class User extends BaseController
 
 
         if ($this->db->delete('user', array('id' => $id))) {
+            $this->permission->purge_user_permissions($id);
             $msg = 'Hapus data berhasil!';
             echo $this->template->alert_success($msg);
         } else {
@@ -745,6 +748,9 @@ class User extends BaseController
             if ($list_id) {
                 $dt = array();
                 $this->db->delete('user', "id IN ($list_id)");
+                foreach ($id as $user_id) {
+                    $this->permission->purge_user_permissions((int) $user_id);
+                }
                 $msg = 'Hapus data berhasil!';
                 echo $this->template->alert_success($msg);
             } else {

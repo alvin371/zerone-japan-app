@@ -182,6 +182,7 @@ class Roles extends BaseController
                 if ($this->db->trans_status() === FALSE) {
                     echo $this->template->alert_danger('Failed to create role!');
                 } else {
+                    $this->permission->refresh_role_permissions($role_id);
                     $msg = 'Role created successfully!';
                     echo $this->template->alert_success($msg);
                 }
@@ -279,6 +280,7 @@ class Roles extends BaseController
                 if ($this->db->trans_status() === FALSE) {
                     echo $this->template->alert_danger('Failed to update role!');
                 } else {
+                    $this->permission->refresh_role_permissions($id);
                     $msg = 'Role updated successfully!';
                     echo $this->template->alert_success($msg);
                 }

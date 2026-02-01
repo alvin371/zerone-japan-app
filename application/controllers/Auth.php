@@ -518,6 +518,7 @@ class Auth extends CI_Controller
             $msg = 'Registration failed. Please try again.';
             echo $this->template->alert_danger($msg);
         } else {
+            $this->permission->refresh_user_permissions($user_id);
             log_message('info', 'User registered successfully: ' . $username . ' (ID: ' . $user_id . ')');
             $msg = 'Registration successful! You can now login with your credentials.';
             echo $this->template->alert_success($msg);
