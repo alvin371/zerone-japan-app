@@ -325,6 +325,16 @@ class Api_v2 extends CI_Controller
     {
         $marketplace = "TIKTOK";
         $dt = $_GET;
+        $debug = (isset($dt['debug']) && $dt['debug'] == '1') || (!empty($_SESSION['tiktok_debug']));
+        if (isset($_SESSION['tiktok_debug'])) {
+            unset($_SESSION['tiktok_debug']);
+        }
+        $debug_data = array(
+            'token_get' => array(),
+            'shops' => array(),
+            'db' => array(),
+        );
+
         $app_key = $dt['app_key'] ?? $this->app_key_tiktok;
         $code = $dt['code'];
         $app_secret = $this->app_secret_tiktok;
@@ -346,15 +356,33 @@ class Api_v2 extends CI_Controller
             CURLOPT_CUSTOMREQUEST => 'GET',
         ));
 
-        $response = curl_exec($curl);
+        $response_raw = curl_exec($curl);
+        $token_curl_error = curl_error($curl);
+        $token_http_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
 
         curl_close($curl);
 
-        $response = json_decode($response, true);
+        $response = json_decode($response_raw, true);
         if (!is_array($response)) {
-            log_message('error', 'TIKTOK token/get invalid response: ' . substr((string) $response, 0, 2000));
+            log_message('error', 'TIKTOK token/get invalid response: ' . substr((string) $response_raw, 0, 2000));
         } else if (isset($response['code']) && $response['code'] != 0) {
             log_message('error', 'TIKTOK token/get error: ' . json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        }
+
+        if ($debug) {
+            $debug_data['token_get'] = array(
+                'request_url' => 'https://auth.tiktok-shops.com/api/v2/token/get?app_key=' . $app_key . '&app_secret=' . $app_secret . '&auth_code=' . $code . '&grant_type=authorized_code',
+                'request_params' => array(
+                    'app_key' => $app_key,
+                    'app_secret' => $app_secret,
+                    'auth_code' => $code,
+                    'grant_type' => 'authorized_code',
+                ),
+                'http_code' => $token_http_code,
+                'curl_error' => $token_curl_error,
+                'response_raw' => $response_raw,
+                'response_json' => $response,
+            );
         }
 
         $access_token = $response['data']['access_token'];
@@ -362,6 +390,12 @@ class Api_v2 extends CI_Controller
         $granted_scopes = $response['data']['granted_scopes'] ?? array();
         $expired_at = $response['data']['access_token_expire_in'];
         if (empty($access_token)) {
+            if ($debug) {
+                header('Content-Type: text/html; charset=utf-8');
+                echo '<pre>' . htmlspecialchars(json_encode($debug_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), ENT_QUOTES, 'UTF-8') . '</pre>';
+                echo '<a href="' . base_url() . 'marketplace-account">Kembali</a>';
+                die;
+            }
             echo 'Koneksi tiktok tidak berhasil. Silahkan coba lagi nanti! <a href="' . base_url() . 'marketplace-account">Kembali</a>';
             die;
         }
@@ -398,11 +432,22 @@ class Api_v2 extends CI_Controller
             ),
         ));
 
-        $response = curl_exec($curl);
+        $shops_response_raw = curl_exec($curl);
+        $shops_curl_error = curl_error($curl);
+        $shops_http_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
 
         curl_close($curl);
 
-        $response = json_decode($response, true);
+        $response = json_decode($shops_response_raw, true);
+        if ($debug) {
+            $debug_data['shops'] = array(
+                'request_url' => $url,
+                'http_code' => $shops_http_code,
+                'curl_error' => $shops_curl_error,
+                'response_raw' => $shops_response_raw,
+                'response_json' => $response,
+            );
+        }
 
         $shop_id = $response['data']['shops'][0]['id'];
         $shop_name = $response['data']['shops'][0]['name'];
@@ -432,11 +477,34 @@ class Api_v2 extends CI_Controller
             $dt['updated_by'] = $_SESSION['user']['id'];
             $dt['expired_at'] = DATE("Y-m-d H:i:s", $expired_at);
             $this->db->update('marketplace_config', $dt, array('id' => $check['id']));
+            if ($debug) {
+                $debug_data['db'] = array(
+                    'action' => 'update',
+                    'id' => $check['id'],
+                    'shop_id' => $shop_id,
+                    'shop_name' => $shop_name,
+                    'granted_scopes' => $granted_scopes,
+                );
+            }
         } else {
             $dt['created_at'] = DATE("Y-m-d H:i:s");
             $dt['created_by'] = $_SESSION['user']['id'];
             $dt['expired_at'] = DATE("Y-m-d H:i:s", $expired_at);
             $this->db->insert('marketplace_config', $dt);
+            if ($debug) {
+                $debug_data['db'] = array(
+                    'action' => 'insert',
+                    'shop_id' => $shop_id,
+                    'shop_name' => $shop_name,
+                    'granted_scopes' => $granted_scopes,
+                );
+            }
+        }
+        if ($debug) {
+            header('Content-Type: text/html; charset=utf-8');
+            echo '<pre>' . htmlspecialchars(json_encode($debug_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), ENT_QUOTES, 'UTF-8') . '</pre>';
+            echo '<a href="' . base_url() . 'marketplace-account">Kembali</a>';
+            die;
         }
         return redirect(base_url() . 'marketplace-account');
     }
