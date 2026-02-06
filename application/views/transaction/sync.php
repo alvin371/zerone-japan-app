@@ -6,6 +6,11 @@
 	<input type="hidden" name="id" value="<?= $data['id'] ?>">
 	<p class="mb-0">Apakah kamu yakin ingin melakukan sync data produk?</p>
 
+	<div class="form-check mt-2">
+		<input class="form-check-input" type="checkbox" value="1" id="sync-debug-toggle">
+		<label class="form-check-label" for="sync-debug-toggle">Show Debug</label>
+	</div>
+
 	<?php
 	foreach ($store as $k => $v) {
 
@@ -27,12 +32,16 @@
 $arr = array();
 foreach ($store as $k => $v) {
 ?>
-	<form action="<?= base_url() ?>transaction/sync-process?marketplace=<?= $v['marketplace'] ?>&shop_id=<?= $v['id'] ?>&start_date=<?= $_GET['start_date'] ?>&until_date=<?= $_GET['until_date'] ?>" method="POST" id="form-modal-sync-<?= $k ?>"></form>
+	<form action="<?= base_url() ?>transaction/sync-process?marketplace=<?= $v['marketplace'] ?>&shop_id=<?= $v['id'] ?>&start_date=<?= $_GET['start_date'] ?>&until_date=<?= $_GET['until_date'] ?>" method="POST" id="form-modal-sync-<?= $k ?>">
+		<input type="hidden" name="debug" value="">
+	</form>
 	<form action="<?= base_url() ?>marketplace-account/refresh-token-process?marketplace=<?= $v['marketplace'] ?>&shop_id=<?= $v['id'] ?>" method="POST" id="form-modal-refresh-<?= $k ?>"></form>
 
 	<script type="text/javascript">
 		$("#form-modal-sync-<?= $k ?>").submit(function() {
 			var form = $(this);
+			var debug = $("#sync-debug-toggle").is(":checked") ? "1" : "";
+			form.find("input[name='debug']").val(debug);
 			var mydata = new FormData(this);
 			$.ajax({
 				type: "POST",
@@ -53,15 +62,23 @@ foreach ($store as $k => $v) {
 				success: function(response, textStatus, xhr) {
 					var str = response;
 					console.log(str);
+					var hasDebug = str.indexOf('data-debug="1"') != -1;
 					if (str.indexOf("success") != -1) {
 						$(".form-message").hide().html(response).slideDown("fast");
-						setTimeout(function() {
-							window.location.href = "";
+						if (!hasDebug) {
+							setTimeout(function() {
+								window.location.href = "";
+								$(".btn-send-sync")
+									.removeClass("disabled")
+									.html("Sync Data")
+									.attr("disabled", false);
+							}, 2500);
+						} else {
 							$(".btn-send-sync")
 								.removeClass("disabled")
 								.html("Sync Data")
 								.attr("disabled", false);
-						}, 2500);
+						}
 					} else {
 						$(".form-message").hide().html(response).slideDown("fast");
 						$(".btn-send-sync")

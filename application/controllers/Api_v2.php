@@ -2960,6 +2960,9 @@ class Api_v2 extends CI_Controller
 
         $dt = $_GET;
         $debug = isset($dt['debug']) && $dt['debug'] == '1';
+        $debug_logs = array();
+        $debug_truncated = false;
+        $debug_limit = 5;
         $marketplace = $dt['marketplace'];
         $marketplace = strtoupper($marketplace);
         $shop_id = $dt['shop_id'];
@@ -3108,6 +3111,25 @@ class Api_v2 extends CI_Controller
                         );
                         $log_level = $has_error ? 'error' : 'debug';
                         log_message($log_level, 'TIKTOK order sync response: ' . json_encode($log_payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+                    }
+                    if ($debug) {
+                        if (count($debug_logs) < $debug_limit) {
+                            $debug_logs[] = array(
+                                'marketplace' => $marketplace,
+                                'shop_id' => $shop_id,
+                                'shop_name' => $shop_name,
+                                'page_token' => $page_token,
+                                'http_code' => $http_code,
+                                'curl_error' => $curl_error,
+                                'request_body' => $body_payload,
+                                'response_code' => $response_code,
+                                'response_message' => $response_message,
+                                'response_len' => $response_len,
+                                'response_snippet' => $response_snippet,
+                            );
+                        } else {
+                            $debug_truncated = true;
+                        }
                     }
 
                     $orders = array();
@@ -3528,6 +3550,12 @@ class Api_v2 extends CI_Controller
         $html['status'] = true;
         $html['data'] = array();
         $html['msg'] = 'Sync data order berhasil!';
+        if ($debug) {
+            $html['debug'] = array(
+                'tiktok' => $debug_logs,
+                'truncated' => $debug_truncated,
+            );
+        }
         echo json_encode($html, true);
         die;
     }
