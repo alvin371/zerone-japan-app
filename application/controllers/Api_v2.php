@@ -101,34 +101,42 @@ class Api_v2 extends CI_Controller
 
     function tiktok_signature_generator($dt)
     {
-        $secret = $dt['secret'];
-        $ts = $dt['timest'];
-        $queryParam = $dt['get'];
+        $secret = $dt['secret'] ?? '';
+        $ts = $dt['timest'] ?? null;
+        $queryParam = $dt['get'] ?? [];
+
         $param = [];
         foreach ($queryParam as $key => $value) {
-            if ($key == "timestamp") {
-                $v = $ts;
-            } else {
-                $v = $value;
-                if ($v == null || $v == "{{" . $key . "}}") {
-                    $v = $this->getEnvVar($key);
-                }
+            if ($key === 'sign' || $key === 'access_token') {
+                continue;
             }
-            $param[$key] = $v;
+            if ($key === 'timestamp' && $ts !== null) {
+                $value = $ts;
+            } else if ($value === null || $value === '{{' . $key . '}}') {
+                $value = $this->getEnvVar($key);
+            }
+            $param[$key] = $value;
         }
-        unset($param["sign"]);
-        unset($param["access_token"]);
-        $sortedObj = $this->objKeySort($param);
-        $path = parse_url($dt['url'], PHP_URL_PATH);
-        $signstring = $secret . $path;
-        foreach ($sortedObj as $key => $value) {
-            $signstring .= $key . $value;
-        }
-        // $signstring .=  $secret;
-        $signstring .= $dt['post'] . $secret;
 
-        $sign = hash_hmac("sha256", $signstring, $secret);
-        return $sign;
+        ksort($param);
+
+        $path = parse_url($dt['url'], PHP_URL_PATH);
+        $input = $path;
+        foreach ($param as $key => $value) {
+            $input .= $key . $value;
+        }
+
+        $body = $dt['post'] ?? '';
+        if (is_array($body) || is_object($body)) {
+            $body = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+        if ($body !== null && $body !== '') {
+            $input .= $body;
+        }
+
+        $input = $secret . $input . $secret;
+
+        return hash_hmac('sha256', $input, $secret);
     }
 
     public function marketplace_callback_shopee()
@@ -2948,8 +2956,6 @@ class Api_v2 extends CI_Controller
 
     function marketplace_order()
     {
-
-
         header('Content-Type: application/json; charset=utf-8');
 
         $dt = $_GET;
@@ -2977,17 +2983,16 @@ class Api_v2 extends CI_Controller
             $arr_product[$v['id']] = $v;
         }
 
-
-
-        $start_date = $_GET['start_date'];
-        $until_date = $_GET['until_date'];
-        if (empty($start_date) || empty($until_date)) {
-            $start_date = DATE("Y-m-d 00:00:00");
-            $until_date = DATE("Y-m-d 00:00:00");
-        } else {
-            $start_date .= '00:00:00';
-            $until_date .= '00:00:00';
+        $start_date = $_GET['start_date'] ?? '';
+        $until_date = $_GET['until_date'] ?? '';
+        if (empty($start_date)) {
+            $start_date = DATE("Y-m-01");
         }
+        if (empty($until_date)) {
+            $until_date = DATE("Y-m-d");
+        }
+        $start_date .= ' 00:00:00';
+        $until_date .= ' 00:00:00';
 
         $start_time = strtotime($start_date);
         $until_time = $until_date . '';
@@ -3006,25 +3011,45 @@ class Api_v2 extends CI_Controller
                 $shop_name = $v['shop_name'];
 
                 $page_size = 100;
-                $cursor = "";
+                $page_token = "";
 
                 for ($i = 0; $i <= 100; $i++) {
 
-                    $url = 'https://open-api.tiktokglobalshop.com/api/orders/search?access_token=' . $access_token . '&app_key=' . $app_key . '&shop_id=' . $shop_id . '&sign={{sign}}&timestamp={{timestamp}}&version=202212';
-                    $urlParts = parse_url($url);
-                    $paramGET = [];
-                    parse_str($urlParts['query'], $paramGET);
-                    $timest = strtotime('now');
-                    $pr = array();
-                    $pr['secret'] = $app_secret;
-                    $pr['timest'] = $timest;
-                    $pr['get'] = $paramGET;
-                    $pr['post'] = '{"cursor":"' . $cursor . '","page_size":' . $page_size . ',"sort_by":"CREATE_TIME","create_time_from":' . $start_time . ',"create_time_to":' . $until_time . ',"sort_type":2}';
-                    $pr['url'] = $url;
+                    $endpoint_path = '/order/202309/orders/search';
+                    $timest = time();
+
+                    $queryParams = array(
+                        'app_key' => $app_key,
+                        'shop_cipher' => $shop_cipher,
+                        'sort_field' => 'create_time',
+                        'sort_order' => 'ASC',
+                        'timestamp' => $timest,
+                        'page_size' => $page_size,
+                    );
+                    if ($page_token !== '') {
+                        $queryParams['page_token'] = $page_token;
+                    }
+
+                    $now_time = time();
+                    $body_payload = array(
+                        'create_time_ge' => $start_time,
+                        'create_time_lt' => $until_time ?: $now_time,
+                        'update_time_ge' => $start_time,
+                        'update_time_lt' => $until_time ?: $now_time,
+                    );
+                    $body_json = json_encode($body_payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                    $pr = array(
+                        'secret' => $app_secret,
+                        'timest' => $timest,
+                        'get' => $queryParams,
+                        'post' => $body_json,
+                        'url' => 'https://open-api.tiktokglobalshop.com' . $endpoint_path,
+                    );
                     $sign = $this->tiktok_signature_generator($pr);
 
-                    $url = str_replace('{{sign}}', $sign, $url);
-                    $url = str_replace('{{timestamp}}', $timest, $url);
+                    $queryParams['sign'] = $sign;
+                    $url = 'https://open-api.tiktokglobalshop.com' . $endpoint_path . '?' . http_build_query($queryParams);
                     $curl = curl_init();
                     curl_setopt_array($curl, array(
                         CURLOPT_URL => $url,
@@ -3035,25 +3060,32 @@ class Api_v2 extends CI_Controller
                         CURLOPT_FOLLOWLOCATION => true,
                         CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
                         CURLOPT_CUSTOMREQUEST => 'POST',
-                        CURLOPT_POSTFIELDS => $pr['post'],
+                        CURLOPT_POSTFIELDS => $body_json,
                         CURLOPT_HTTPHEADER => array(
-                            'Content-Type: application/json',
+                            'content-type: application/json',
                             'x-tts-access-token: ' . $access_token
                         ),
                     ));
 
-                    $response = curl_exec($curl);
+                    $response_raw = curl_exec($curl);
+                    $response = json_decode($response_raw, true);
 
-                    $response = json_decode($response, true);
+                    $orders = array();
+                    if (isset($response['data']['orders']) && is_array($response['data']['orders'])) {
+                        $orders = $response['data']['orders'];
+                    } else if (isset($response['data']['order_list']) && is_array($response['data']['order_list'])) {
+                        $orders = $response['data']['order_list'];
+                    }
 
-                    $cursor = $response['data']['next_cursor'];
-
-                    if (empty($response['data']['order_list'])) {
+                    if (empty($orders)) {
                         break;
                     }
 
-                    foreach ($response['data']['order_list'] as $k2 => $v2) {
-                        $order_id = $v2['order_id'];
+                    foreach ($orders as $k2 => $v2) {
+                        $order_id = $v2['order_id'] ?? ($v2['id'] ?? '');
+                        if ($order_id === '') {
+                            continue;
+                        }
                         $this->db->select('id');
                         $trx = $this->mymodel->selectDataOne('transaction', array('order_id' => $order_id, 'marketplace' => $marketplace));
 
@@ -3065,22 +3097,208 @@ class Api_v2 extends CI_Controller
                         $dt['shop_name'] = strval($shop_name);
                         $dt['marketplace'] = $marketplace;
                         $dt['order_id'] = $order_id;
-                        if (in_array($v2['order_status'], array('100'))) {
+                        $dt['is_manual'] = 0;
+
+                        $create_time = isset($v2['create_time']) ? intval($v2['create_time']) : 0;
+                        if ($create_time > 0) {
+                            $dt['date'] = DATE("Y-m-d H:i:s", $create_time);
+                        }
+
+                        if (isset($v2['is_sample_order'])) {
+                            $dt['c_type'] = $v2['is_sample_order'] ? "Affiliate" : "Pelanggan";
+                        }
+
+                        if (!empty($v2['shipping_provider'])) {
+                            $dt['shipping'] = strval($v2['shipping_provider']);
+                        } else if (!empty($v2['delivery_option_name'])) {
+                            $dt['shipping'] = strval($v2['delivery_option_name']);
+                        }
+                        if (!empty($v2['tracking_number'])) {
+                            $dt['awb_number'] = strval($v2['tracking_number']);
+                        }
+
+                        if (isset($v2['is_cod'])) {
+                            $dt['payment_type'] = $v2['is_cod'] ? "COD" : "TF";
+                        }
+                        if (!empty($v2['paid_time'])) {
+                            $dt['payment_status'] = "Paid";
+                            $dt['pay_at'] = DATE("Y-m-d H:i:s", intval($v2['paid_time']));
+                        } else if (isset($v2['paid_time'])) {
+                            $dt['payment_status'] = "Unpaid";
+                        }
+                        if (!empty($v2['rts_time'])) {
+                            $dt['rts_at'] = DATE("Y-m-d H:i:s", intval($v2['rts_time']));
+                        } else if (!empty($v2['rts_sla_time'])) {
+                            $dt['rts_at'] = DATE("Y-m-d H:i:s", intval($v2['rts_sla_time']));
+                        }
+                        if (!empty($v2['cancel_time'])) {
+                            $dt['return_at'] = DATE("Y-m-d H:i:s", intval($v2['cancel_time']));
+                        }
+
+                        $buyer_id = $v2['buyer_user_id'] ?? ($v2['user_id'] ?? '');
+                        if ($buyer_id !== '') {
+                            $dt['id_buyer'] = strval($buyer_id);
+                        }
+                        $buyer_username = $v2['buyer_nickname'] ?? ($v2['buyer_email'] ?? '');
+                        if ($buyer_username !== '') {
+                            $dt['c_username'] = strval($buyer_username);
+                        }
+
+                        if (!empty($v2['recipient_address']) && is_array($v2['recipient_address'])) {
+                            $recipient = $v2['recipient_address'];
+                            if (!empty($recipient['name'])) {
+                                $dt['customer_text'] = strval($recipient['name']);
+                            }
+                            if (!empty($recipient['phone_number'])) {
+                                $dt['phone'] = strval($recipient['phone_number']);
+                            }
+                            if (!empty($recipient['full_address'])) {
+                                $dt['address'] = strval($recipient['full_address']);
+                                $dt['address_2'] = strval($recipient['full_address']);
+                            }
+                            if (!empty($recipient['postal_code'])) {
+                                $dt['postal_code'] = strval($recipient['postal_code']);
+                            }
+                            if (!empty($recipient['district_info']) && is_array($recipient['district_info'])) {
+                                $dt['province_text'] = strval($recipient['district_info'][1]['address_name'] ?? '');
+                                $dt['city_text'] = strval($recipient['district_info'][2]['address_name'] ?? '');
+                                $dt['subdistrict_text'] = strval($recipient['district_info'][3]['address_name'] ?? '');
+                            }
+                        }
+
+                        if (!empty($v2['payment']) && is_array($v2['payment'])) {
+                            $payment = $v2['payment'];
+                            if (isset($payment['total_amount'])) {
+                                $dt['customer_price'] = doubleval($payment['total_amount']);
+                            }
+                            if (isset($payment['original_total_product_price'])) {
+                                $dt['omset_kotor'] = doubleval($payment['original_total_product_price']);
+                            }
+                            if (isset($payment['seller_discount']) && isset($payment['original_total_product_price'])) {
+                                $dt['diskon_penjual'] = doubleval($payment['seller_discount']);
+                                $dt['omset_bersih'] = doubleval($payment['original_total_product_price'] - $payment['seller_discount']);
+                            }
+                        }
+
+                        if (!empty($v2['line_items']) && is_array($v2['line_items'])) {
+                            $js = array();
+                            foreach ($v2['line_items'] as $k4 => $v4) {
+                                $js[$k4]['id_product'] = $v4['sku_id'] ?? '';
+                                $js[$k4]['sku'] = $v4['seller_sku'] ?? '';
+                                $name = $v4['sku_name'] ?? '';
+                                if ($name === "Default") {
+                                    $name = "";
+                                }
+                                $js[$k4]['name'] = $name;
+                                $js[$k4]['id_product_parent'] = $v4['product_id'] ?? '';
+                                $js[$k4]['sku_parent'] = "";
+                                $js[$k4]['name_parent'] = $v4['product_name'] ?? '';
+                                $js[$k4]['qty'] = isset($v4['quantity']) ? strval($v4['quantity']) : '1';
+                                $js[$k4]['price'] = $v4['sale_price'] ?? '';
+                                $js[$k4]['original_price'] = $v4['original_price'] ?? '';
+                                $js[$k4]['discount'] = $v4['seller_discount'] ?? '';
+                            }
+
+                            $price_total_hpp = 0;
+                            $json = array();
+                            $brand_selected = "MG";
+                            $arr_brand = array();
+                            foreach ($js as $k4 => $v4) {
+                                $id_product = $v4['id_product'];
+                                $id_product_parent = $v4['id_product_parent'];
+                                $this->db->select('json');
+                                $conf = $this->mymodel->selectDataOne('product_variant_3rd', array('id_product' => $id_product, 'id_product_parent' => $id_product_parent));
+                                if (empty($conf) && $v4['sku']) {
+                                    $conf = $this->mymodel->selectDataOne('product_variant_3rd', array('sku' => $v4['sku']));
+                                }
+                                $conf = json_decode($conf['json'] ?? '', true);
+                                if (empty($conf)) {
+                                    $js[$k4]['is_empty'] = true;
+                                    continue;
+                                }
+                                foreach ($conf as $k5 => $v5) {
+                                    if (empty($arr_product[$v5['product']])) {
+                                        continue;
+                                    }
+                                    $product = $arr_product[$v5['product']];
+                                    $arr_brand[$product['brand']] += 1;
+                                    $price = 0;
+                                    if (($dt['c_type'] ?? '') == "Pelanggan") {
+                                        $price = $product['price_normal'];
+                                    } else if (($dt['c_type'] ?? '') == "Distributor") {
+                                        $price = $product['price_distributor'];
+                                    } else if (($dt['c_type'] ?? '') == "Reseller") {
+                                        $price = $product['price_reseller'];
+                                    } else {
+                                        $price = $product['price_normal'];
+                                    }
+                                    $json[$product['id']]['sku'] = $product['sku'];
+                                    $json[$product['id']]['hpp'] = $product['price_buy'];
+                                    $json[$product['id']]['product'] = $product['id'];
+                                    $json[$product['id']]['product_text'] = $product['name'];
+                                    $json[$product['id']]['product_sub'] = $product['sub_name'];
+                                    $json[$product['id']]['brand'] = $product['brand'];
+                                    $json[$product['id']]['price'] = $price;
+                                    $json[$product['id']]['qty'] += (doubleval($v5['qty']) * doubleval($v4['qty']));
+                                    $json[$product['id']]['price_total'] += (doubleval($json[$product['id']]['qty']) * doubleval($price));
+                                    $json[$product['id']]['price_total_hpp'] += (doubleval($json[$product['id']]['qty']) * doubleval($json[$product['id']]['hpp']));
+
+                                    $price_total_hpp += (doubleval($json[$product['id']]['qty']) * doubleval($json[$product['id']]['hpp']));
+                                }
+                            }
+
+                            if (!empty($arr_brand)) {
+                                $max = 0;
+                                foreach ($arr_brand as $k5 => $v5) {
+                                    if ($v5 >= $max) {
+                                        $max = $v5;
+                                        $brand_selected = $k5;
+                                    }
+                                }
+                                $dt['brand'] = $brand_selected;
+                            }
+
+                            $dt['pesanan'] = json_encode($js, true);
+                            $dt['pesanan_count'] = count($js);
+                            $dt['json'] = json_encode($json, true);
+                            $dt['hpp'] = doubleval($price_total_hpp);
+                        }
+
+                        $status_raw = $v2['order_status'] ?? ($v2['status'] ?? '');
+                        $status_upper = strtoupper(strval($status_raw));
+                        if (in_array($status_upper, array('UNPAID'))) {
                             $order_status = 'UNPAID';
-                        } else if (in_array($v2['order_status'], array('112', '105'))) {
+                        } else if (in_array($status_upper, array('AWAITING_COLLECTION', 'ON_HOLD'))) {
                             $order_status = 'PROCESSED';
-                        } else if (in_array($v2['order_status'], array('returned'))) {
+                        } else if (in_array($status_upper, array('RETURNED'))) {
                             $order_status = 'RETURN';
-                        } else if (in_array($v2['order_status'], array('140'))) {
+                        } else if (in_array($status_upper, array('CANCELLED'))) {
                             $order_status = 'CANCELLED';
-                        } else if (in_array($v2['order_status'], array('130',))) {
+                        } else if (in_array($status_upper, array('COMPLETED'))) {
                             $order_status = 'COMPLETED';
-                        } else if (in_array($v2['order_status'], array('122'))) {
+                        } else if (in_array($status_upper, array('DELIVERED'))) {
                             $order_status = 'DELIVERED';
-                        } else if (in_array($v2['order_status'], array('121', '114'))) {
+                        } else if (in_array($status_upper, array('IN_TRANSIT', 'PARTIALLY_SHIPPING'))) {
                             $order_status = 'SHIPPED';
                             $dt['is_shipped'] = 1;
-                        } else if (in_array($v2['order_status'], array('111'))) {
+                        } else if (in_array($status_upper, array('AWAITING_SHIPMENT'))) {
+                            $order_status = 'READY_TO_SHIP';
+                        } else if (in_array($status_raw, array('100'))) {
+                            $order_status = 'UNPAID';
+                        } else if (in_array($status_raw, array('112', '105'))) {
+                            $order_status = 'PROCESSED';
+                        } else if (in_array($status_raw, array('returned'))) {
+                            $order_status = 'RETURN';
+                        } else if (in_array($status_raw, array('140'))) {
+                            $order_status = 'CANCELLED';
+                        } else if (in_array($status_raw, array('130',))) {
+                            $order_status = 'COMPLETED';
+                        } else if (in_array($status_raw, array('122'))) {
+                            $order_status = 'DELIVERED';
+                        } else if (in_array($status_raw, array('121', '114'))) {
+                            $order_status = 'SHIPPED';
+                            $dt['is_shipped'] = 1;
+                        } else if (in_array($status_raw, array('111'))) {
                             $order_status = 'READY_TO_SHIP';
                         }
                         $dt['order_status'] = strval($order_status);
@@ -3088,11 +3306,20 @@ class Api_v2 extends CI_Controller
                             $dt['updated_at'] = DATE("Y-m-d H:i:s");
                             $this->db->update('transaction', $dt, array('id' => $trx['id']));
                         } else if ($dt['order_status'] !== 'CANCELLED') {
-                            $dt['date'] = DATE("Y-m-d 23:00:00", strtotime($start_date));
+                            if (empty($dt['date'])) {
+                                $dt['date'] = DATE("Y-m-d 23:00:00", strtotime($start_date));
+                            }
                             $dt['created_at'] = DATE("Y-m-d H:i:s");
                             $this->db->insert('transaction', $dt);
                         }
                     }
+
+                    $next_page_token = $response['data']['next_page_token'] ?? '';
+                    if ($next_page_token !== '') {
+                        $page_token = $next_page_token;
+                        continue;
+                    }
+                    break;
                 }
             } else if ($v['opt'] == "SHOPEE") {
                 $marketplace = "SHOPEE";

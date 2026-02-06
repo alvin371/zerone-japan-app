@@ -12,11 +12,14 @@ class Cronjob_logger
     protected $CI;
     protected $current_log_id = null;
     protected $start_time = null;
+    protected $enabled = false;
 
     public function __construct()
     {
         $this->CI =& get_instance();
-        $this->CI->load->model('mymodel');
+        if ($this->enabled) {
+            $this->CI->load->model('mymodel');
+        }
     }
 
     /**
@@ -30,6 +33,10 @@ class Cronjob_logger
     public function start($job_name, $job_type = 'sync', $trigger_source = 'scheduled')
     {
         $this->start_time = microtime(true);
+        if (!$this->enabled) {
+            $this->current_log_id = 1;
+            return $this->current_log_id;
+        }
 
         // Get triggered_by user ID if available
         $triggered_by = null;
@@ -73,6 +80,10 @@ class Cronjob_logger
      */
     public function complete($total_items = 0, $processed_items = 0, $failed_items = 0, $skipped_items = 0, $details = null)
     {
+        if (!$this->enabled) {
+            $this->reset();
+            return true;
+        }
         if (!$this->current_log_id) {
             return false;
         }
@@ -117,6 +128,10 @@ class Cronjob_logger
      */
     public function fail($error_message, $details = null)
     {
+        if (!$this->enabled) {
+            $this->reset();
+            return true;
+        }
         if (!$this->current_log_id) {
             return false;
         }
@@ -160,6 +175,9 @@ class Cronjob_logger
      */
     public function update_progress($processed_items, $failed_items = 0, $total_items = null, $skipped_items = 0)
     {
+        if (!$this->enabled) {
+            return true;
+        }
         if (!$this->current_log_id) {
             return false;
         }
@@ -193,6 +211,9 @@ class Cronjob_logger
      */
     public function add_details($details)
     {
+        if (!$this->enabled) {
+            return true;
+        }
         if (!$this->current_log_id || empty($details)) {
             return false;
         }

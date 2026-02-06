@@ -2949,13 +2949,15 @@ class Transaction extends BaseController
         $dt = $_GET;
         $marketplace = $dt['marketplace'];
         $shop_id = $dt['shop_id'];
-        $start_date = $dt['until_date'];
+        $start_date = isset($dt['start_date']) ? $dt['start_date'] : $dt['until_date'];
         $until_date = $dt['until_date'];
 
         $curl = curl_init();
 
+        $url = $this->template->endpoint_url() . 'api/marketplace/order?marketplace=' . $marketplace . '&shop_id=' . $shop_id . '&start_date=' . $start_date . '&until_date=' . $until_date;
+
         curl_setopt_array($curl, array(
-            CURLOPT_URL => $this->template->endpoint_url() . 'api/marketplace/order?marketplace=' . $marketplace . '&shop_id=' . $shop_id . '&start_date=' . $start_date . '&until_date=' . $until_date,
+            CURLOPT_URL => $url,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_ENCODING => '',
             CURLOPT_MAXREDIRS => 10,
@@ -2968,19 +2970,34 @@ class Transaction extends BaseController
             ),
         ));
 
-        $response = curl_exec($curl);
+        $response_raw = curl_exec($curl);
+        $curl_error = curl_error($curl);
+        $http_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
 
         curl_close($curl);
-        $response = json_decode($response, true);
-        if ($response['status'] == true) {
-            $msg = $response['msg'];
-            echo $this->template->alert_success($msg);
-            die;
-        } else {
-            $msg = $response['msg'];
+        $response = json_decode($response_raw, true);
+
+        if ($response_raw === false || $curl_error) {
+            $msg = 'Sync gagal: tidak ada respons dari server. Silakan coba lagi.';
             echo $this->template->alert_danger($msg);
             die;
         }
+
+        if (!is_array($response)) {
+            $msg = 'Sync gagal: response tidak valid dari server.';
+            echo $this->template->alert_danger($msg);
+            die;
+        }
+
+        if (isset($response['status']) && $response['status'] == true) {
+            $msg = isset($response['msg']) && $response['msg'] !== '' ? $response['msg'] : 'Sync berhasil.';
+            echo $this->template->alert_success($msg);
+            die;
+        }
+
+        $msg = isset($response['msg']) && $response['msg'] !== '' ? $response['msg'] : 'Sync gagal. Silakan cek koneksi/token marketplace.';
+        echo $this->template->alert_danger($msg);
+        die;
     }
 
     public function import_resi()
