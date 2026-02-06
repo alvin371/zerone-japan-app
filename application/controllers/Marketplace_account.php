@@ -480,6 +480,12 @@ class Marketplace_account extends CI_Controller
 
         $type = $_GET['type'];
         if ($type == "TIKTOK") {
+            $debug = $_GET['debug'] ?? '';
+            if ($debug == '1') {
+                $_SESSION['tiktok_debug'] = 1;
+            } else if (isset($_SESSION['tiktok_debug'])) {
+                unset($_SESSION['tiktok_debug']);
+            }
             $service_id = $this->tiktok_service_id;
             $url = "https://services.tiktokshop.com/open/authorize?service_id=$service_id";
             redirect($url);
