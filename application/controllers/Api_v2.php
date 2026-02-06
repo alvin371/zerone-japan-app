@@ -300,6 +300,7 @@ class Api_v2 extends CI_Controller
         $config['app_key'] = $app_key;
         $config['access_token'] = $access_token;
         $config['refresh_token'] = $refresh_token;
+        $config['granted_scopes'] = $granted_scopes;
         $config['shop'] = $shop;
         $dt['val'] = json_encode($config, true);
         $dt['opt'] = $marketplace;
@@ -349,6 +350,7 @@ class Api_v2 extends CI_Controller
 
         $access_token = $response['data']['access_token'];
         $refresh_token = $response['data']['refresh_token'];
+        $granted_scopes = $response['data']['granted_scopes'] ?? array();
         $expired_at = $response['data']['access_token_expire_in'];
         if (empty($access_token)) {
             echo 'Koneksi tiktok tidak berhasil. Silahkan coba lagi nanti! <a href="' . base_url() . 'marketplace-account">Kembali</a>';
@@ -457,6 +459,7 @@ class Api_v2 extends CI_Controller
                 $config = json_decode($v['val'], true);
                 $app_key = $this->app_key_tiktok;
                 $refresh_token = $config['refresh_token'];
+                $granted_scopes = $config['granted_scopes'] ?? array();
                 $app_secret = $this->app_secret_tiktok;
 
                 $curl = curl_init();
@@ -530,6 +533,7 @@ class Api_v2 extends CI_Controller
                     $config['app_key'] = $app_key;
                     $config['access_token'] = $access_token;
                     $config['refresh_token'] = $refresh_token;
+                    $config['granted_scopes'] = $granted_scopes;
                     $config['shop'] = $shop;
                     $dt['val'] = json_encode($config, true);
                     $dt['opt'] = $marketplace;
@@ -3009,6 +3013,7 @@ class Api_v2 extends CI_Controller
                 $config = json_decode($v['val'], true);
                 $app_key = $config['app_key'];
                 $access_token = $config['access_token'];
+                $granted_scopes = $config['granted_scopes'] ?? array();
                 $shop_cipher = $config['shop']['cipher'];
                 $app_secret = $this->app_secret_tiktok;
                 $shop_id = $v['shop_id'];
@@ -3107,6 +3112,7 @@ class Api_v2 extends CI_Controller
                         );
                         if ($debug) {
                             $log_context['access_token'] = $access_token;
+                            $log_context['granted_scopes'] = $granted_scopes;
                         }
                         $log_payload = array(
                             'context' => $log_context,
@@ -3122,6 +3128,7 @@ class Api_v2 extends CI_Controller
                                 'shop_id' => $shop_id,
                                 'shop_name' => $shop_name,
                                 'access_token' => $access_token,
+                                'granted_scopes' => $granted_scopes,
                                 'page_token' => $page_token,
                                 'http_code' => $http_code,
                                 'curl_error' => $curl_error,
