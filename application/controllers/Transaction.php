@@ -2950,6 +2950,9 @@ class Transaction extends BaseController
         $marketplace = $dt['marketplace'];
         $shop_id = $dt['shop_id'];
         $debug = isset($dt['debug']) ? $dt['debug'] : '';
+        if ($debug === '' && isset($_POST['debug'])) {
+            $debug = $_POST['debug'];
+        }
         $start_date = isset($dt['start_date']) ? $dt['start_date'] : $dt['until_date'];
         $until_date = $dt['until_date'];
 
@@ -2993,14 +2996,21 @@ class Transaction extends BaseController
             die;
         }
 
+        $debug_html = '';
+        if ($debug !== '' && isset($response['debug'])) {
+            $debug_json = json_encode($response['debug'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $debug_json = htmlspecialchars($debug_json, ENT_QUOTES, 'UTF-8');
+            $debug_html = '<div class="debug-panel mt-2" data-debug="1"><details open><summary>Debug Response</summary><pre class="small mb-0" style="max-height: 360px; overflow: auto;">' . $debug_json . '</pre></details></div>';
+        }
+
         if (isset($response['status']) && $response['status'] == true) {
             $msg = isset($response['msg']) && $response['msg'] !== '' ? $response['msg'] : 'Sync berhasil.';
-            echo $this->template->alert_success($msg);
+            echo $this->template->alert_success($msg) . $debug_html;
             die;
         }
 
         $msg = isset($response['msg']) && $response['msg'] !== '' ? $response['msg'] : 'Sync gagal. Silakan cek koneksi/token marketplace.';
-        echo $this->template->alert_danger($msg);
+        echo $this->template->alert_danger($msg) . $debug_html;
         die;
     }
 
