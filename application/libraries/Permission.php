@@ -372,7 +372,6 @@ class Permission
             'user' => 'user',
             'profile' => 'profile',
             'scraper' => 'scraper',
-            'cronjob_log' => 'cronjob_log',
             'recruitment' => 'recruitment'
         ];
 

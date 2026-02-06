@@ -953,6 +953,8 @@ class Api extends CI_Controller
                     $pr['timest'] = $timest;
                     $pr['get'] = $paramGET;
                     $pr['url'] = $url;
+                    $post_body = '{"order_id_list":[' . $list_id . ']}';
+                    $pr['post'] = $post_body;
                     $sign = $this->tiktok_signature_generator($pr);
 
                     $url = str_replace('{{sign}}', $sign, $url);
@@ -969,7 +971,7 @@ class Api extends CI_Controller
                         CURLOPT_FOLLOWLOCATION => true,
                         CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
                         CURLOPT_CUSTOMREQUEST => 'POST',
-                        CURLOPT_POSTFIELDS => '{"order_id_list":[' . $list_id . ']}',
+                        CURLOPT_POSTFIELDS => $post_body,
                         CURLOPT_HTTPHEADER => array(
                             'Content-Type: application/json',
                             'x-tts-access-token: ' . $access_token
@@ -3633,34 +3635,42 @@ class Api extends CI_Controller
 
     function tiktok_signature_generator($dt)
     {
-        $secret = $dt['secret'];
-        $ts = $dt['timest'];
-        $queryParam = $dt['get'];
+        $secret = $dt['secret'] ?? '';
+        $ts = $dt['timest'] ?? null;
+        $queryParam = $dt['get'] ?? [];
+
         $param = [];
         foreach ($queryParam as $key => $value) {
-            if ($key == "timestamp") {
-                $v = $ts;
-            } else {
-                $v = $value;
-                if ($v == null || $v == "{{" . $key . "}}") {
-                    $v = $this->getEnvVar($key);
-                }
+            if ($key === 'sign' || $key === 'access_token') {
+                continue;
             }
-            $param[$key] = $v;
+            if ($key === 'timestamp' && $ts !== null) {
+                $value = $ts;
+            } else if ($value === null || $value === '{{' . $key . '}}') {
+                $value = $this->getEnvVar($key);
+            }
+            $param[$key] = $value;
         }
-        unset($param["sign"]);
-        unset($param["access_token"]);
-        $sortedObj = $this->objKeySort($param);
+
+        ksort($param);
+
         $path = parse_url($dt['url'], PHP_URL_PATH);
-        $signstring = $secret . $path;
-        foreach ($sortedObj as $key => $value) {
-            $signstring .= $key . $value;
+        $input = $path;
+        foreach ($param as $key => $value) {
+            $input .= $key . $value;
         }
-        $signstring .= '{}' . $secret;
-        // echo $signstring;
-        // die;
-        $sign = hash_hmac("sha256", $signstring, $secret);
-        return $sign;
+
+        $body = $dt['post'] ?? '';
+        if (is_array($body) || is_object($body)) {
+            $body = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+        if ($body !== null && $body !== '') {
+            $input .= $body;
+        }
+
+        $input = $secret . $input . $secret;
+
+        return hash_hmac('sha256', $input, $secret);
     }
 
     public function marketplace_callback_tiktok()
@@ -3921,22 +3931,51 @@ class Api extends CI_Controller
                 $shop_cipher = $config['shop']['cipher'];
                 $app_secret = $this->app_secret_tiktok;
 
-                //
-                $url = 'https://open-api.tiktokglobalshop.com/order/202309/orders/search?access_token=' . $access_token . '&app_key=' . $app_key . '&page_size=100&shop_cipher=' . $shop_cipher . '&shop_id=&sign={{sign}}&sort_order=DESC&timestamp={{timestamp}}&version=202309';
+                $page_size = isset($dt['page_size']) ? intval($dt['page_size']) : 20;
+                if ($page_size <= 0) {
+                    $page_size = 20;
+                }
+                $sort_field = isset($dt['sort_field']) ? $dt['sort_field'] : 'create_time';
+                $sort_order = isset($dt['sort_order']) ? $dt['sort_order'] : 'ASC';
+                $page_token = isset($dt['page_token']) ? $dt['page_token'] : '';
 
-                $urlParts = parse_url($url);
-                $paramGET = [];
-                parse_str($urlParts['query'], $paramGET);
-                $timest = strtotime('now');
-                $pr = array();
-                $pr['secret'] = $app_secret;
-                $pr['timest'] = $timest;
-                $pr['get'] = $paramGET;
-                $pr['url'] = $url;
+                $endpoint_path = '/order/202309/orders/search';
+                $timest = time();
+
+                $queryParams = array(
+                    'app_key' => $app_key,
+                    'shop_cipher' => $shop_cipher,
+                    'sort_field' => $sort_field,
+                    'timestamp' => $timest,
+                    'page_size' => $page_size,
+                    'sort_order' => $sort_order,
+                );
+                if ($page_token !== '') {
+                    $queryParams['page_token'] = $page_token;
+                }
+
+                $body_raw = file_get_contents('php://input');
+                $body = json_decode($body_raw, true);
+                if (!is_array($body)) {
+                    $body = $_POST;
+                }
+                if (!is_array($body)) {
+                    $body = array();
+                }
+
+                $body_json = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                $pr = array(
+                    'secret' => $app_secret,
+                    'timest' => $timest,
+                    'get' => $queryParams,
+                    'post' => $body_json,
+                    'url' => 'https://open-api.tiktokglobalshop.com' . $endpoint_path
+                );
                 $sign = $this->tiktok_signature_generator($pr);
+                $queryParams['sign'] = $sign;
 
-                $url = str_replace('{{sign}}', $sign, $url);
-                $url = str_replace('{{timestamp}}', $timest, $url);
+                $url = 'https://open-api.tiktokglobalshop.com' . $endpoint_path . '?' . http_build_query($queryParams);
                 $curl = curl_init();
                 curl_setopt_array($curl, array(
                     CURLOPT_URL => $url,
@@ -3947,7 +3986,7 @@ class Api extends CI_Controller
                     CURLOPT_FOLLOWLOCATION => true,
                     CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
                     CURLOPT_CUSTOMREQUEST => 'POST',
-                    CURLOPT_POSTFIELDS => '{}',
+                    CURLOPT_POSTFIELDS => $body_json,
                     CURLOPT_HTTPHEADER => array(
                         'Content-Type: application/json',
                         'x-tts-access-token: ' . $access_token
@@ -5521,6 +5560,8 @@ class Api extends CI_Controller
             $pr['timest'] = $timest;
             $pr['get'] = $paramGET;
             $pr['url'] = $url;
+            $post_body = '{"cursor":"' . $cursor . '","page_size":100,"sort_by":"CREATE_TIME","create_time_from":' . $start_time . ',"create_time_to":' . $until_time . ',"sort_type":2}';
+            $pr['post'] = $post_body;
             $sign = $this->tiktok_signature_generator($pr);
 
             $url = str_replace('{{sign}}', $sign, $url);
@@ -6099,7 +6140,7 @@ class Api extends CI_Controller
                 CURLOPT_FOLLOWLOCATION => true,
                 CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
                 CURLOPT_CUSTOMREQUEST => 'POST',
-                CURLOPT_POSTFIELDS => '{"cursor":"' . $cursor . '","page_size":100,"sort_by":"CREATE_TIME","create_time_from":' . $start_time . ',"create_time_to":' . $until_time . ',"sort_type":2}',
+                CURLOPT_POSTFIELDS => $post_body,
                 CURLOPT_HTTPHEADER => array(
                     'Content-Type: application/json',
                     'x-tts-access-token: ' . $access_token

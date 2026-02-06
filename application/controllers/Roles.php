@@ -121,14 +121,11 @@ class Roles extends BaseController
 
         $data['data'] = array();
 
-        // Get all modules grouped by category for permission matrix
-        $modules = $this->mymodel->selectWithQuery("
-            SELECT id, name, display_name, parent_id, sort_order, icon
-            FROM modules
-            WHERE is_active = 1
-            ORDER BY sort_order, display_name
-        ");
-        $data['module_groups'] = $this->group_modules_by_category($modules);
+        // Get modules aligned with sidebar (source of truth)
+        $sidebar_groups = $this->get_sidebar_module_groups();
+        $sidebar_module_names = $this->flatten_sidebar_module_groups($sidebar_groups);
+        $modules = $this->get_modules_by_names($sidebar_module_names);
+        $data['module_groups'] = $this->group_modules_by_sidebar($modules, $sidebar_groups);
 
         // Pass module permissions configuration
         $data['module_permissions'] = $this->get_module_permissions();
@@ -209,14 +206,11 @@ class Roles extends BaseController
 
         $data['data'] = $query[0];
 
-        // Get all modules grouped by category for permission matrix
-        $modules = $this->mymodel->selectWithQuery("
-            SELECT id, name, display_name, parent_id, sort_order, icon
-            FROM modules
-            WHERE is_active = 1
-            ORDER BY sort_order, display_name
-        ");
-        $data['module_groups'] = $this->group_modules_by_category($modules);
+        // Get modules aligned with sidebar (source of truth)
+        $sidebar_groups = $this->get_sidebar_module_groups();
+        $sidebar_module_names = $this->flatten_sidebar_module_groups($sidebar_groups);
+        $modules = $this->get_modules_by_names($sidebar_module_names);
+        $data['module_groups'] = $this->group_modules_by_sidebar($modules, $sidebar_groups);
 
         // Pass module permissions configuration
         $data['module_permissions'] = $this->get_module_permissions();
@@ -433,6 +427,111 @@ class Roles extends BaseController
         return array_filter($groups, function ($group) {
             return !empty($group);
         });
+    }
+
+    /**
+     * Sidebar module groups and order (keep in sync with TemplateDashboard sidebar menu)
+     */
+    private function get_sidebar_module_groups()
+    {
+        return array(
+            'System Management' => array(
+                'dashboard',
+                'report',
+                'expense'
+            ),
+            'Marketing' => array(
+                'overview',
+                'ads_tiktok',
+                'ads_meta',
+                'ads_shopee',
+                'ads_lazada',
+                'influencer',
+                'influencer_dummy',
+                'endorse_campaign',
+                'calendar',
+                'payment',
+                'codeboost'
+            ),
+            'Order & Customer' => array(
+                'transaction',
+                'transaction_item',
+                'crm_mg',
+                'crm_pome',
+                'group_wa'
+            ),
+            'Operasional' => array(
+                'stock',
+                'product'
+            ),
+            'Akun' => array(
+                'user',
+                'roles',
+                'modules',
+                'profile'
+            )
+        );
+    }
+
+    /**
+     * Flatten sidebar module groups into an ordered list without duplicates
+     */
+    private function flatten_sidebar_module_groups($groups)
+    {
+        $names = array();
+        foreach ($groups as $module_names) {
+            foreach ($module_names as $module_name) {
+                if (!in_array($module_name, $names, true)) {
+                    $names[] = $module_name;
+                }
+            }
+        }
+        return $names;
+    }
+
+    /**
+     * Fetch active modules by name list
+     */
+    private function get_modules_by_names($module_names)
+    {
+        if (empty($module_names)) {
+            return array();
+        }
+
+        $escaped_names = array_map([$this->db, 'escape'], $module_names);
+        $in_list = implode(',', $escaped_names);
+
+        return $this->mymodel->selectWithQuery("
+            SELECT id, name, display_name, parent_id, sort_order, icon
+            FROM modules
+            WHERE is_active = 1
+              AND name IN ($in_list)
+        ");
+    }
+
+    /**
+     * Group modules by sidebar order and grouping
+     */
+    private function group_modules_by_sidebar($modules, $sidebar_groups)
+    {
+        $modules_by_name = array();
+        foreach ($modules as $module) {
+            $modules_by_name[$module['name']] = $module;
+        }
+
+        $grouped = array();
+        foreach ($sidebar_groups as $group_name => $module_names) {
+            foreach ($module_names as $module_name) {
+                if (isset($modules_by_name[$module_name])) {
+                    if (!isset($grouped[$group_name])) {
+                        $grouped[$group_name] = array();
+                    }
+                    $grouped[$group_name][] = $modules_by_name[$module_name];
+                }
+            }
+        }
+
+        return $grouped;
     }
 
     /**
