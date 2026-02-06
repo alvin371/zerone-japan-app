@@ -2949,12 +2949,16 @@ class Transaction extends BaseController
         $dt = $_GET;
         $marketplace = $dt['marketplace'];
         $shop_id = $dt['shop_id'];
+        $debug = isset($dt['debug']) ? $dt['debug'] : '';
         $start_date = isset($dt['start_date']) ? $dt['start_date'] : $dt['until_date'];
         $until_date = $dt['until_date'];
 
         $curl = curl_init();
 
         $url = $this->template->endpoint_url() . 'api/marketplace/order?marketplace=' . $marketplace . '&shop_id=' . $shop_id . '&start_date=' . $start_date . '&until_date=' . $until_date;
+        if ($debug !== '') {
+            $url .= '&debug=' . urlencode($debug);
+        }
 
         curl_setopt_array($curl, array(
             CURLOPT_URL => $url,
