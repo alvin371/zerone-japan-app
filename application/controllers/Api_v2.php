@@ -3105,6 +3105,9 @@ class Api_v2 extends CI_Controller
                             'response_message' => $response_message,
                             'response_len' => $response_len,
                         );
+                        if ($debug) {
+                            $log_context['access_token'] = $access_token;
+                        }
                         $log_payload = array(
                             'context' => $log_context,
                             'response' => $response_snippet,
@@ -3118,6 +3121,7 @@ class Api_v2 extends CI_Controller
                                 'marketplace' => $marketplace,
                                 'shop_id' => $shop_id,
                                 'shop_name' => $shop_name,
+                                'access_token' => $access_token,
                                 'page_token' => $page_token,
                                 'http_code' => $http_code,
                                 'curl_error' => $curl_error,
