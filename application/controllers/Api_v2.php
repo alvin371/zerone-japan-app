@@ -325,9 +325,13 @@ class Api_v2 extends CI_Controller
     {
         $marketplace = "TIKTOK";
         $dt = $_GET;
-        $app_key = $dt['app_key'];
+        $app_key = $dt['app_key'] ?? $this->app_key_tiktok;
         $code = $dt['code'];
         $app_secret = $this->app_secret_tiktok;
+        if (empty($app_key)) {
+            echo 'App key tiktok kosong. Silahkan cek konfigurasi TIKTOK_APP_KEY. <a href="' . base_url() . 'marketplace-account">Kembali</a>';
+            die;
+        }
 
         $curl = curl_init();
 
@@ -347,6 +351,11 @@ class Api_v2 extends CI_Controller
         curl_close($curl);
 
         $response = json_decode($response, true);
+        if (!is_array($response)) {
+            log_message('error', 'TIKTOK token/get invalid response: ' . substr((string) $response, 0, 2000));
+        } else if (isset($response['code']) && $response['code'] != 0) {
+            log_message('error', 'TIKTOK token/get error: ' . json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        }
 
         $access_token = $response['data']['access_token'];
         $refresh_token = $response['data']['refresh_token'];
@@ -484,6 +493,7 @@ class Api_v2 extends CI_Controller
 
                     $access_token = $response['data']['access_token'];
                     $refresh_token = $response['data']['refresh_token'];
+                    $granted_scopes = $response['data']['granted_scopes'] ?? $granted_scopes;
                     $expired_at = $response['data']['access_token_expire_in'];
 
                     $url = 'https://open-api.tiktokglobalshop.com/authorization/202309/shops?app_key=' . $app_key . '&sign={{sign}}&timestamp={{timestamp}}';
