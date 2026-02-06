@@ -2959,6 +2959,7 @@ class Api_v2 extends CI_Controller
         header('Content-Type: application/json; charset=utf-8');
 
         $dt = $_GET;
+        $debug = isset($dt['debug']) && $dt['debug'] == '1';
         $marketplace = $dt['marketplace'];
         $marketplace = strtoupper($marketplace);
         $shop_id = $dt['shop_id'];
@@ -3068,7 +3069,46 @@ class Api_v2 extends CI_Controller
                     ));
 
                     $response_raw = curl_exec($curl);
+                    $curl_error = curl_error($curl);
+                    $http_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+                    curl_close($curl);
+
                     $response = json_decode($response_raw, true);
+                    $response_code = is_array($response) ? ($response['code'] ?? null) : null;
+                    $response_message = is_array($response) ? ($response['message'] ?? null) : null;
+
+                    $response_text = is_string($response_raw) ? $response_raw : '';
+                    $response_len = strlen($response_text);
+                    $response_snippet = $response_text;
+                    if ($response_len > 4000) {
+                        $response_snippet = substr($response_text, 0, 4000) . '...[truncated]';
+                    }
+
+                    $has_error = !empty($curl_error) || !is_array($response) || ($response_code !== null && $response_code != 0);
+                    if ($debug || $has_error) {
+                        $log_context = array(
+                            'marketplace' => $marketplace,
+                            'shop_id' => $shop_id,
+                            'shop_name' => $shop_name,
+                            'start_time' => $start_time,
+                            'until_time' => $until_time,
+                            'page_size' => $page_size,
+                            'page_token' => $page_token,
+                            'endpoint' => $endpoint_path,
+                            'http_code' => $http_code,
+                            'curl_error' => $curl_error,
+                            'request_body' => $body_payload,
+                            'response_code' => $response_code,
+                            'response_message' => $response_message,
+                            'response_len' => $response_len,
+                        );
+                        $log_payload = array(
+                            'context' => $log_context,
+                            'response' => $response_snippet,
+                        );
+                        $log_level = $has_error ? 'error' : 'debug';
+                        log_message($log_level, 'TIKTOK order sync response: ' . json_encode($log_payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+                    }
 
                     $orders = array();
                     if (isset($response['data']['orders']) && is_array($response['data']['orders'])) {
