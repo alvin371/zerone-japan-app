@@ -1,4 +1,9 @@
 FROM php:8.2-apache
+
+RUN mkdir -p /tmp && chmod 1777 /tmp
+
+ENV TMPDIR=/tmp
+
 WORKDIR /var/www/html
 RUN apt-get update && apt-get install -y \
     git \
