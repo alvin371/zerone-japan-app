@@ -410,37 +410,91 @@
     }).then((result) => {
             if (result.isConfirmed) {
                 $('#page-loading').fadeIn(200);
-    
-                $.getJSON('<?= base_url() ?>influencer/sync_external_process', function(response) {
-                    console.log("Response received", response);
-    
-                    if (response.status === 'success') {
-                    $.toast({
-                        heading: "Informasi",
-                        text: response.message,
-                        showHideTransition: "slide",
-                        icon: "success",
-                        position: "top-right",
-                        loaderBg: "#def7f0",
-                        hideAfter: 2500,
-                    });
-                    setTimeout(function() {
-                        location.reload();
-                    }, 2600); 
-                } else {
-                    $.toast({
-                        heading: "Gagal",
-                        text: response.message,
-                        icon: "error",
-                        position: "top-right"
+
+                const syncUrl = '<?= base_url() ?>influencer/sync_external_process';
+                const batchSize = 12;
+                const maxRuntime = 20;
+                const maxRequests = 300;
+                let requestCount = 0;
+                const summary = {
+                    processed: 0,
+                    synced_tiktok: 0,
+                    queued_non_tiktok: 0,
+                    deferred_rate_limited: 0,
+                    failed: 0,
+                    errors: []
+                };
+
+                function processBatch(cursor) {
+                    if (requestCount >= maxRequests) {
+                        $('#page-loading').fadeOut(200);
+                        Swal.fire("Warning", "Proses dihentikan karena batas jumlah request batch. Klik refresh lagi untuk melanjutkan.", "warning");
+                        return;
+                    }
+
+                    requestCount++;
+
+                    $.getJSON(syncUrl, {
+                        cursor: cursor,
+                        batch: batchSize,
+                        max_runtime: maxRuntime
+                    }, function(response) {
+                        if (response.status !== 'success') {
+                            $('#page-loading').fadeOut(200);
+                            $.toast({
+                                heading: "Gagal",
+                                text: response.message || 'Gagal memproses sinkronisasi.',
+                                icon: "error",
+                                position: "top-right"
+                            });
+                            return;
+                        }
+
+                        const data = response.data || {};
+                        summary.processed += parseInt(data.processed || 0, 10);
+                        summary.synced_tiktok += parseInt(data.synced_tiktok || 0, 10);
+                        summary.queued_non_tiktok += parseInt(data.queued_non_tiktok || 0, 10);
+                        summary.deferred_rate_limited += parseInt(data.deferred_rate_limited || 0, 10);
+                        summary.failed += parseInt(data.failed || 0, 10);
+                        if (Array.isArray(data.errors)) {
+                            summary.errors = summary.errors.concat(data.errors).slice(0, 5);
+                        }
+
+                        const hasMore = !!data.has_more;
+                        const nextCursor = parseInt(data.next_cursor || cursor, 10);
+                        if (hasMore && nextCursor > cursor) {
+                            processBatch(nextCursor);
+                            return;
+                        }
+
+                        $('#page-loading').fadeOut(200);
+
+                        let finalText = `Refresh data selesai. Diproses ${summary.processed} data. TikTok: ${summary.synced_tiktok}, Queue: ${summary.queued_non_tiktok}, Ditunda (rate limit): ${summary.deferred_rate_limited}, Gagal: ${summary.failed}.`;
+                        if (summary.errors.length > 0) {
+                            finalText += ` Contoh error: ${summary.errors.join(' | ')}`;
+                        }
+
+                        $.toast({
+                            heading: "Informasi",
+                            text: finalText,
+                            showHideTransition: "slide",
+                            icon: "success",
+                            position: "top-right",
+                            loaderBg: "#def7f0",
+                            hideAfter: 4500,
+                        });
+
+                        setTimeout(function() {
+                            location.reload();
+                        }, 1200);
+                    }).fail(function(jqXHR, textStatus, errorThrown) {
+                        $('#page-loading').fadeOut(200);
+                        console.error("AJAX Failed", textStatus, errorThrown);
+                        Swal.fire("Error", "Gagal terhubung ke server saat proses batch. Coba lagi.", "error");
                     });
                 }
-                }).fail(function(jqXHR, textStatus, errorThrown) {
-                    console.error("AJAX Failed", textStatus, errorThrown);
-                    Swal.fire("Error", "Gagal terhubung ke server. Coba lagi.", "error");
-                }).always(function() {
-                    $('#page-loading').fadeOut(200);
-                });
+
+                processBatch(0);
             }
         });
     });
