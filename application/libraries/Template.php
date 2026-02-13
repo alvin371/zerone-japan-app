@@ -355,13 +355,21 @@ class Template
         return $headers;
     }
 
-    function curlRequestWithRetry($url, $headers, $isValidResponse, $maxRetry = 3, $delayMs = 300)
+    function curlRequestWithRetry($url, $headers, $isValidResponse, $maxRetry = 3, $delayMs = 300, $debugContext = array())
     {
         $lastResponse = null;
         for ($attempt = 1; $attempt <= $maxRetry; $attempt++) {
             $lastResponse = $this->curlRequest($url, $headers);
+            $isValid = false;
+            if (is_callable($isValidResponse)) {
+                $isValid = $isValidResponse($lastResponse);
+            }
 
-            if (is_callable($isValidResponse) && $isValidResponse($lastResponse)) {
+            if (!empty($debugContext)) {
+                $this->log_rapidapi_debug($debugContext, $lastResponse, $attempt, $maxRetry, $isValid);
+            }
+
+            if ($isValid) {
                 return $lastResponse;
             }
 
@@ -385,7 +393,11 @@ class Template
                 : (isset($resp['statusCode']) && intval($resp['statusCode']) === 0);
 
             return $ok && !empty($resp['userInfo']['user']['secUid']);
-        });
+        }, 3, 300, array(
+            'source' => 'get_account_id',
+            'endpoint' => '/api/user/info',
+            'username' => $username
+        ));
     }
 
     function getDataFromSearchEndpoint($username)
@@ -401,7 +413,11 @@ class Template
                 : (isset($resp['statusCode']) && intval($resp['statusCode']) === 0);
 
             return $ok && !empty($resp['user_list'][0]['user_info']);
-        });
+        }, 3, 300, array(
+            'source' => 'get_account_id',
+            'endpoint' => '/api/search/account',
+            'username' => $username
+        ));
     }
 
     function getDataFromSecondEndpoint($username)
@@ -487,6 +503,73 @@ class Template
         ];
 
         $path = APPPATH . 'logs/endpoint_trace.log';
+        @file_put_contents($path, json_encode($entry, JSON_UNESCAPED_SLASHES) . PHP_EOL, FILE_APPEND | LOCK_EX);
+    }
+
+    function is_rapidapi_debug_enabled()
+    {
+        static $enabled = null;
+        if ($enabled !== null) {
+            return $enabled;
+        }
+
+        $raw = strtolower(trim((string) env('RAPIDAPI_DEBUG', 'false')));
+        $enabled = in_array($raw, array('1', 'true', 'yes', 'on'), true);
+        return $enabled;
+    }
+
+    function extract_api_status_code($response)
+    {
+        if (!is_array($response)) {
+            return null;
+        }
+
+        if (isset($response['status_code'])) {
+            return intval($response['status_code']);
+        }
+        if (isset($response['statusCode'])) {
+            return intval($response['statusCode']);
+        }
+        if (isset($response['data']['status_code'])) {
+            return intval($response['data']['status_code']);
+        }
+        if (isset($response['data']['statusCode'])) {
+            return intval($response['data']['statusCode']);
+        }
+
+        return null;
+    }
+
+    function log_rapidapi_debug($context, $response, $attempt = null, $maxRetry = null, $isValid = null)
+    {
+        if (!$this->is_rapidapi_debug_enabled()) {
+            return;
+        }
+
+        $meta = is_array($response) ? ($response['__meta'] ?? array()) : array();
+        $message = '';
+        if (is_array($response)) {
+            $message = $response['message'] ?? ($response['msg'] ?? ($response['error'] ?? ($response['data']['message'] ?? '')));
+        }
+
+        $entry = array(
+            'ts' => date('c'),
+            'event' => 'rapidapi_debug',
+            'context' => $context,
+            'attempt' => $attempt !== null ? intval($attempt) : null,
+            'max_retry' => $maxRetry !== null ? intval($maxRetry) : null,
+            'is_valid' => $isValid === null ? null : boolval($isValid),
+            'http_code' => intval($meta['http_code'] ?? 0),
+            'api_status' => is_array($response) ? ($response['status'] ?? ($response['data']['status'] ?? null)) : null,
+            'api_status_code' => $this->extract_api_status_code($response),
+            'rate_limited' => $this->is_rate_limited_response($response),
+            'message' => $this->shorten_text((string) $message, 220),
+            'curl_error' => strval($meta['curl_error'] ?? ''),
+            'url' => strval($meta['url'] ?? ''),
+            'response_snippet' => $this->shorten_text((string) ($meta['response_snippet'] ?? ''), 500),
+        );
+
+        $path = APPPATH . 'logs/rapidapi_debug.log';
         @file_put_contents($path, json_encode($entry, JSON_UNESCAPED_SLASHES) . PHP_EOL, FILE_APPEND | LOCK_EX);
     }
 
@@ -697,7 +780,11 @@ class Template
                     : (isset($dataBlock['statusCode']) && intval($dataBlock['statusCode']) === 0);
 
                 return $ok && !empty($dataBlock['itemList']);
-            });
+            }, 3, 300, array(
+                'source' => 'get_post_list',
+                'endpoint' => '/api/user/posts',
+                'account_id' => strval($account_id)
+            ));
 
             $items = $resp['data']['itemList'] ?? array();
             if (!empty($items)) {
@@ -776,7 +863,11 @@ class Template
                     : (isset($r['statusCode']) && intval($r['statusCode']) === 0);
 
                 return $ok && !empty($r['itemInfo']['itemStruct']);
-            });
+            }, 3, 300, array(
+                'source' => 'get_social_media',
+                'endpoint' => '/api/post/detail',
+                'content_id' => strval($content_id)
+            ));
 
             $itemStruct = $resp['itemInfo']['itemStruct'] ?? array();
             if (empty($itemStruct)) {

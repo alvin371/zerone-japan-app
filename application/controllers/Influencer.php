@@ -1080,6 +1080,7 @@ class Influencer extends BaseController
         $syncedTiktok = 0;
         $queuedNonTiktok = 0;
         $deferredRateLimited = 0;
+        $deferredSamples = array();
         $failed = 0;
         $nextCursor = $cursor;
         $errors = array();
@@ -1128,6 +1129,13 @@ class Influencer extends BaseController
 
             if (($result['code'] ?? '') === 'rate_limited') {
                 $deferredRateLimited++;
+                if (count($deferredSamples) < 5) {
+                    $deferredSamples[] = array(
+                        'id' => $id,
+                        'platform' => 'Tiktok',
+                        'reason' => strval($result['msg'] ?? 'Rate limited'),
+                    );
+                }
                 continue;
             }
 
@@ -1175,6 +1183,7 @@ class Influencer extends BaseController
                 'synced_tiktok' => $syncedTiktok,
                 'queued_non_tiktok' => $queuedNonTiktok,
                 'deferred_rate_limited' => $deferredRateLimited,
+                'deferred_samples' => $deferredSamples,
                 'failed' => $failed,
                 'next_cursor' => $nextCursor,
                 'has_more' => $hasMore,
