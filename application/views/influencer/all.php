@@ -421,6 +421,7 @@
                     synced_tiktok: 0,
                     queued_non_tiktok: 0,
                     deferred_rate_limited: 0,
+                    deferred_samples: [],
                     failed: 0,
                     errors: []
                 };
@@ -483,6 +484,9 @@
                         summary.queued_non_tiktok += parseInt(data.queued_non_tiktok || 0, 10);
                         summary.deferred_rate_limited += parseInt(data.deferred_rate_limited || 0, 10);
                         summary.failed += parseInt(data.failed || 0, 10);
+                        if (Array.isArray(data.deferred_samples) && data.deferred_samples.length > 0) {
+                            summary.deferred_samples = summary.deferred_samples.concat(data.deferred_samples).slice(0, 5);
+                        }
                         const remaining = parseInt(data.remaining || 0, 10);
                         const syncState = data.sync_state || 'running';
                         const cooldownSeconds = parseInt(data.cooldown_seconds || 0, 10);
@@ -514,11 +518,14 @@
                             const waitText = cooldownSeconds > 0
                                 ? `Coba lagi dalam sekitar ${Math.ceil(cooldownSeconds / 60)} menit.`
                                 : 'Coba lagi dalam beberapa menit.';
+                            const sampleText = summary.deferred_samples.length > 0
+                                ? `\nSample ID terdampak: ${summary.deferred_samples.map(s => s.id).join(', ')}`
+                                : '';
 
                             Swal.fire({
                                 icon: 'warning',
                                 title: 'Rate Limit Terdeteksi',
-                                text: `Sinkronisasi dihentikan sementara karena batas API TikTok. ${waitText}`,
+                                text: `Sinkronisasi dihentikan sementara karena batas API TikTok. ${waitText}${sampleText}`,
                                 confirmButtonText: 'OK',
                             });
                             return;
