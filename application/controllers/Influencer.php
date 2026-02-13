@@ -1056,6 +1056,7 @@ class Influencer extends BaseController
                 'status' => 'success',
                 'message' => 'Tidak ada data yang perlu di-update hari ini.',
                 'data' => [
+                    'sync_state' => 'idle',
                     'processed' => 0,
                     'synced_tiktok' => 0,
                     'queued_non_tiktok' => 0,
@@ -1139,15 +1140,37 @@ class Influencer extends BaseController
         $remaining = $this->count_daily_sync_pending($today, $nextCursor);
         $hasMore = $remaining > 0;
 
-        $message = "Batch selesai. Diproses {$processed} data (TikTok {$syncedTiktok}, Queue {$queuedNonTiktok}, Ditunda {$deferredRateLimited}, Gagal {$failed}).";
-        if ($stoppedByRuntime) {
-            $message .= " Dihentikan karena batas waktu request, lanjutkan batch berikutnya.";
+        $syncState = 'completed';
+        $cooldownSeconds = 0;
+
+        if (
+            $processed > 0
+            && $deferredRateLimited === $processed
+            && $syncedTiktok === 0
+            && $queuedNonTiktok === 0
+            && $failed === 0
+        ) {
+            $syncState = 'throttled';
+            $cooldownSeconds = 120;
+        } else if ($hasMore) {
+            $syncState = 'running';
+        }
+
+        if ($syncState === 'throttled') {
+            $message = "Sinkronisasi ditunda karena batas API TikTok. Diproses {$processed} data dan semuanya terkena rate limit. Coba lagi dalam 2 menit.";
+        } else {
+            $message = "Batch selesai. Diproses {$processed} data (TikTok {$syncedTiktok}, Queue {$queuedNonTiktok}, Ditunda {$deferredRateLimited}, Gagal {$failed}).";
+            if ($stoppedByRuntime) {
+                $message .= " Dihentikan karena batas waktu request, lanjutkan batch berikutnya.";
+            }
         }
 
         echo json_encode([
             'status' => 'success',
             'message' => $message,
             'data' => [
+                'sync_state' => $syncState,
+                'cooldown_seconds' => $cooldownSeconds,
                 'processed' => $processed,
                 'synced_tiktok' => $syncedTiktok,
                 'queued_non_tiktok' => $queuedNonTiktok,

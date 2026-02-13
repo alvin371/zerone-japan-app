@@ -409,13 +409,13 @@
         buttonsStyling: false 
     }).then((result) => {
             if (result.isConfirmed) {
-                $('#page-loading').fadeIn(200);
-
                 const syncUrl = '<?= base_url() ?>influencer/sync_external_process';
                 const batchSize = 12;
                 const maxRuntime = 20;
                 const maxRequests = 300;
                 let requestCount = 0;
+                let throttledStreak = 0;
+                let estimatedTotal = 0;
                 const summary = {
                     processed: 0,
                     synced_tiktok: 0,
@@ -425,9 +425,42 @@
                     errors: []
                 };
 
+                const formatNumber = (value) => (parseInt(value || 0, 10)).toLocaleString('id-ID');
+                const buildProgressHtml = (remaining = 0) => {
+                    const done = parseInt(summary.processed || 0, 10);
+                    const total = estimatedTotal > 0 ? estimatedTotal : (done + parseInt(remaining || 0, 10));
+                    const percent = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+
+                    return `
+                        <div style="text-align:left; font-size:14px;">
+                            <div style="margin-bottom:8px;"><b>Progress:</b> ${formatNumber(done)} / ${formatNumber(total)} data (${percent}%)</div>
+                            <div class="progress mb-2" style="height:14px;">
+                                <div class="progress-bar bg-primary" role="progressbar" style="width:${percent}%;">${percent}%</div>
+                            </div>
+                            <div style="display:flex; flex-wrap:wrap; gap:12px; margin-top:6px;">
+                                <span>TikTok: <b>${formatNumber(summary.synced_tiktok)}</b></span>
+                                <span>Queue: <b>${formatNumber(summary.queued_non_tiktok)}</b></span>
+                                <span>Rate Limit: <b>${formatNumber(summary.deferred_rate_limited)}</b></span>
+                                <span>Gagal: <b>${formatNumber(summary.failed)}</b></span>
+                                <span>Sisa: <b>${formatNumber(remaining)}</b></span>
+                            </div>
+                        </div>
+                    `;
+                };
+
+                Swal.fire({
+                    title: 'Sinkronisasi Influencer Berjalan',
+                    html: buildProgressHtml(0),
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    showConfirmButton: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+
                 function processBatch(cursor) {
                     if (requestCount >= maxRequests) {
-                        $('#page-loading').fadeOut(200);
                         Swal.fire("Warning", "Proses dihentikan karena batas jumlah request batch. Klik refresh lagi untuk melanjutkan.", "warning");
                         return;
                     }
@@ -440,13 +473,7 @@
                         max_runtime: maxRuntime
                     }, function(response) {
                         if (response.status !== 'success') {
-                            $('#page-loading').fadeOut(200);
-                            $.toast({
-                                heading: "Gagal",
-                                text: response.message || 'Gagal memproses sinkronisasi.',
-                                icon: "error",
-                                position: "top-right"
-                            });
+                            Swal.fire("Gagal", response.message || 'Gagal memproses sinkronisasi.', "error");
                             return;
                         }
 
@@ -456,8 +483,45 @@
                         summary.queued_non_tiktok += parseInt(data.queued_non_tiktok || 0, 10);
                         summary.deferred_rate_limited += parseInt(data.deferred_rate_limited || 0, 10);
                         summary.failed += parseInt(data.failed || 0, 10);
+                        const remaining = parseInt(data.remaining || 0, 10);
+                        const syncState = data.sync_state || 'running';
+                        const cooldownSeconds = parseInt(data.cooldown_seconds || 0, 10);
+
+                        if (
+                            parseInt(data.processed || 0, 10) > 0 &&
+                            parseInt(data.deferred_rate_limited || 0, 10) === parseInt(data.processed || 0, 10) &&
+                            parseInt(data.synced_tiktok || 0, 10) === 0 &&
+                            parseInt(data.queued_non_tiktok || 0, 10) === 0
+                        ) {
+                            throttledStreak++;
+                        } else {
+                            throttledStreak = 0;
+                        }
+
+                        if (estimatedTotal <= 0) {
+                            estimatedTotal = summary.processed + remaining;
+                        }
                         if (Array.isArray(data.errors)) {
                             summary.errors = summary.errors.concat(data.errors).slice(0, 5);
+                        }
+
+                        Swal.update({
+                            title: `Sinkronisasi Berjalan (Batch ${requestCount})`,
+                            html: buildProgressHtml(remaining)
+                        });
+
+                        if (syncState === 'throttled' || throttledStreak >= 2) {
+                            const waitText = cooldownSeconds > 0
+                                ? `Coba lagi dalam sekitar ${Math.ceil(cooldownSeconds / 60)} menit.`
+                                : 'Coba lagi dalam beberapa menit.';
+
+                            Swal.fire({
+                                icon: 'warning',
+                                title: 'Rate Limit Terdeteksi',
+                                text: `Sinkronisasi dihentikan sementara karena batas API TikTok. ${waitText}`,
+                                confirmButtonText: 'OK',
+                            });
+                            return;
                         }
 
                         const hasMore = !!data.has_more;
@@ -467,28 +531,22 @@
                             return;
                         }
 
-                        $('#page-loading').fadeOut(200);
-
-                        let finalText = `Refresh data selesai. Diproses ${summary.processed} data. TikTok: ${summary.synced_tiktok}, Queue: ${summary.queued_non_tiktok}, Ditunda (rate limit): ${summary.deferred_rate_limited}, Gagal: ${summary.failed}.`;
+                        let finalText = `Refresh data selesai.\nDiproses ${summary.processed} data.\nTikTok: ${summary.synced_tiktok}, Queue: ${summary.queued_non_tiktok}, Ditunda (rate limit): ${summary.deferred_rate_limited}, Gagal: ${summary.failed}.`;
                         if (summary.errors.length > 0) {
-                            finalText += ` Contoh error: ${summary.errors.join(' | ')}`;
+                            finalText += `\nContoh error: ${summary.errors.join(' | ')}`;
                         }
 
-                        $.toast({
-                            heading: "Informasi",
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Sinkronisasi Selesai',
                             text: finalText,
-                            showHideTransition: "slide",
-                            icon: "success",
-                            position: "top-right",
-                            loaderBg: "#def7f0",
-                            hideAfter: 4500,
+                            confirmButtonText: 'OK',
                         });
 
                         setTimeout(function() {
                             location.reload();
-                        }, 1200);
+                        }, 500);
                     }).fail(function(jqXHR, textStatus, errorThrown) {
-                        $('#page-loading').fadeOut(200);
                         console.error("AJAX Failed", textStatus, errorThrown);
                         Swal.fire("Error", "Gagal terhubung ke server saat proses batch. Coba lagi.", "error");
                     });
