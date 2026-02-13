@@ -265,6 +265,7 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
                                         $arr = array();
                                         $arr[] = "Instagram";
                                         $arr[] = "Tiktok";
+                                        $arr[] = "Threads";
                                         $arr[] = "Twitter";
                                         $arr[] = "Youtube";
                                         foreach ($arr as $val) :

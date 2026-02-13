@@ -16,7 +16,7 @@ class Influencer_dummy extends CI_Controller {
 
     public function index() 
     {
-        $page = !empty($_GET['p']) ? $_GET['p'] : "Tiktok";
+        $page = $this->normalize_platform_page($_GET['p'] ?? 'tiktok');
         $start_date = !empty($_GET['start_date']) ? $_GET['start_date'] : date("Y-m-01");
         $until_date = !empty($_GET['until_date']) ? $_GET['until_date'] : date("Y-m-d");
 
@@ -184,6 +184,14 @@ class Influencer_dummy extends CI_Controller {
             $ratecard = $data['ratecard'];
 
             $user = $this->session->userdata('user');
+
+            if ($type !== "Tiktok") {
+                $queue = $this->template->enqueue_scrape('influencer_dummy', $id, $type, $url, 10);
+                if ($queue['status']) {
+                    return ['status' => 'queued', 'message' => 'Data eksternal sedang diproses via queue.'];
+                }
+                return ['status' => 'error', 'message' => $queue['msg']];
+            }
 
             // Get account ID and basic info
             $response = $this->template->get_account_id($type, $url);
@@ -464,6 +472,22 @@ class Influencer_dummy extends CI_Controller {
 
         $user = $this->session->userdata('user');
 
+        if ($type !== "Tiktok") {
+            $queue = $this->template->enqueue_scrape('influencer_dummy', $id, $type, $url, 10);
+            if ($queue['status']) {
+                echo json_encode([
+                    'status' => 'success',
+                    'message' => 'Data internal berhasil diperbarui. Data eksternal sedang diproses via queue.'
+                ]);
+            } else {
+                echo json_encode([
+                    'status' => 'error',
+                    'message' => $queue['msg']
+                ]);
+            }
+            exit;
+        }
+
         $response = $this->template->get_account_id($type, $url);
 
         if (!$response['status']) {
@@ -564,6 +588,11 @@ class Influencer_dummy extends CI_Controller {
                 $url = $data['url'];
                 $type = $data['type'];
                 $ratecard = is_numeric($data['ratecard']) ? $data['ratecard'] : 0;
+
+                if ($type !== "Tiktok") {
+                    $this->template->enqueue_scrape('influencer_dummy', $id, $type, $url, 10);
+                    continue;
+                }
 
                 $response = $this->template->get_account_id($type, $url);
                 if (!$response['status'] || !isset($response['data']['account_id'])) continue;
@@ -775,8 +804,7 @@ class Influencer_dummy extends CI_Controller {
 
     public function add_form()
     {
-        $page = !empty($_GET['p']) ? $_GET['p'] : "Tiktok";
-        $platform = ucfirst($page);
+        $platform = $this->normalize_platform_page($_GET['p'] ?? 'tiktok');
 
         $data['platform'] = $platform;
         $data['brands'] = $this->db->select('code')->get('brand')->result();
@@ -788,6 +816,25 @@ class Influencer_dummy extends CI_Controller {
         $data['niches'] = $this->mymodel->selectWithQuery("SELECT DISTINCT niche FROM niche");
 
         $this->load->view('influencer_dummy/add_form', $data);
+    }
+
+    private function normalize_platform_page($page)
+    {
+        $value = strtolower(trim((string) $page));
+        if ($value === '' || $value === 'tiktok') {
+            return 'Tiktok';
+        }
+        if ($value === 'instagram') {
+            return 'Instagram';
+        }
+        if ($value === 'threads' || $value === 'thread') {
+            return 'Threads';
+        }
+        if ($value === 'youtube') {
+            return 'YouTube';
+        }
+
+        return 'Tiktok';
     }
 
     public function edit_niche()

@@ -115,6 +115,8 @@ if ($view == 'table') {
                         $v['img'] = base_url() . '/assets/img/icon/icon-tiktok.png';
                     } else if ($v['platform'] == "Instagram") {
                         $v['img'] = base_url() . '/assets/img/icon/icon-ig.png';
+                    } else if ($v['platform'] == "Threads") {
+                        $v['img'] = base_url() . '/assets/img/icon/icon-ig.png';
                     } else if ($v['platform'] == "Youtube") {
                         $v['img'] = base_url() . '/assets/img/icon/icon-youtube.png';
                     } else if ($v['platform'] == "Facebook") {
@@ -221,6 +223,8 @@ if ($view == 'table') {
                     if ($v['type'] == "Tiktok") {
                         $v['img_creator_1'] = base_url() . '/assets/img/icon/icon-tiktok.png';
                     } else if ($v['type'] == "Instagram") {
+                        $v['img_creator_1'] = base_url() . '/assets/img/icon/icon-ig.png';
+                    } else if ($v['type'] == "Threads") {
                         $v['img_creator_1'] = base_url() . '/assets/img/icon/icon-ig.png';
                     } else if ($v['type'] == "Youtube") {
                         $v['img_creator_1'] = base_url() . '/assets/img/icon/icon-youtube.png';
@@ -463,6 +467,8 @@ if ($view == 'table') {
             $v['img'] = base_url() . '/assets/img/icon/icon-tiktok.png';
         } else if ($v['platform'] == "Instagram") {
             $v['img'] = base_url() . '/assets/img/icon/icon-ig.png';
+        } else if ($v['platform'] == "Threads") {
+            $v['img'] = base_url() . '/assets/img/icon/icon-ig.png';
         } else if ($v['platform'] == "Youtube") {
             $v['img'] = base_url() . '/assets/img/icon/icon-youtube.png';
         } else if ($v['platform'] == "Facebook") {
@@ -569,6 +575,8 @@ if ($view == 'table') {
         if ($v['type'] == "Tiktok") {
             $v['img_creator_1'] = base_url() . '/assets/img/icon/icon-tiktok.png';
         } else if ($v['type'] == "Instagram") {
+            $v['img_creator_1'] = base_url() . '/assets/img/icon/icon-ig.png';
+        } else if ($v['type'] == "Threads") {
             $v['img_creator_1'] = base_url() . '/assets/img/icon/icon-ig.png';
         } else if ($v['type'] == "Youtube") {
             $v['img_creator_1'] = base_url() . '/assets/img/icon/icon-youtube.png';
