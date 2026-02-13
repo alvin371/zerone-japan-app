@@ -816,6 +816,7 @@
                                     <select class="editable-select">
                                         <option value="Tiktok" <?= $inf->type == 'Tiktok' ? 'selected' : '' ?>>Tiktok</option>
                                         <option value="Instagram" <?= $inf->type == 'Instagram' ? 'selected' : '' ?>>Instagram</option>
+                                        <option value="Threads" <?= $inf->type == 'Threads' ? 'selected' : '' ?>>Threads</option>
                                         <option value="YouTube" <?= $inf->type == 'YouTube' ? 'selected' : '' ?>>YouTube</option>
                                     </select>
                                 </div>
@@ -1458,6 +1459,7 @@ $(document).ready(function() {
                         <select class="editable-select">
                             <option value="Tiktok" ${data.type === 'Tiktok' ? 'selected' : ''}>Tiktok</option>
                             <option value="Instagram" ${data.type === 'Instagram' ? 'selected' : ''}>Instagram</option>
+                            <option value="Threads" ${data.type === 'Threads' ? 'selected' : ''}>Threads</option>
                             <option value="YouTube" ${data.type === 'YouTube' ? 'selected' : ''}>YouTube</option>
                         </select>
                     </div>

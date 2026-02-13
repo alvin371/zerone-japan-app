@@ -541,6 +541,10 @@ class Influencer extends BaseController
             $this->db->update('influencer', $dt, array('id' => $id));
 
             $url = $query['url'];
+            if ($query['type'] != "Tiktok") {
+                $this->template->enqueue_scrape('influencer', $id, $query['type'], $url, 10);
+                continue;
+            }
 
             $response = $this->template->get_account_id($query['type'], $query['url']);
             // print_r($response);die;
@@ -716,6 +720,16 @@ class Influencer extends BaseController
         $this->db->update('influencer', $dt, array('id' => $id));
         // die;
         $url = $query['url'];
+        if ($query['type'] != "Tiktok") {
+            $queue = $this->template->enqueue_scrape('influencer', $id, $query['type'], $url, 10);
+            if ($queue['status']) {
+                $msg = "Data internal berhasil diperbarui. Data eksternal sedang diproses, akan diperbarui dalam beberapa menit.";
+                echo $this->template->alert_success($msg);
+            } else {
+                echo $this->template->alert_danger($queue['msg']);
+            }
+            die;
+        }
 
         $response = $this->template->get_account_id($query['type'], $query['url']);
         if ($response['status'] == false) {
@@ -1036,6 +1050,10 @@ class Influencer extends BaseController
             $this->db->update('influencer', $dt, array('id' => $id));
 
             $url = $query['url'];
+            if ($query['type'] != "Tiktok") {
+                $this->template->enqueue_scrape('influencer', $id, $query['type'], $url, 10);
+                continue;
+            }
 
             $response = $this->template->get_account_id($query['type'], $query['url']);
             // print_r($response);die;

@@ -120,6 +120,7 @@
                 <select class="form-select" id="type" name="type">
                     <option value="Tiktok" <?= ($platform == 'Tiktok') ? 'selected' : '' ?>>Tiktok</option>
                     <option value="Instagram" <?= ($platform == 'Instagram') ? 'selected' : '' ?>>Instagram</option>
+                    <option value="Threads" <?= ($platform == 'Threads') ? 'selected' : '' ?>>Threads</option>
                     <option value="YouTube">YouTube</option>
                 </select>
             </div>
@@ -152,7 +153,7 @@
                         <strong>Ambil data engagement otomatis</strong>
                         <br>
                         <small style="color: rgba(0, 0, 0, 0.65); margin-left: 20px;">
-                            Secara otomatis mengambil follower, CPM, avg view, dan ER dari TikTok/Instagram setelah menyimpan data
+                            Secara otomatis mengambil follower, CPM, avg view, dan ER dari TikTok/Instagram/Threads setelah menyimpan data
                         </small>
                     </label>
                 </div>

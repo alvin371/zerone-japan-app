@@ -396,6 +396,8 @@ class Review_endorse extends CI_Controller
             $data['img'] = base_url() . '/assets/img/icon/icon-tiktok.png';
         } else if ($data['platform'] == "Instagram") {
             $data['img'] = base_url() . '/assets/img/icon/icon-ig.png';
+        } else if ($data['platform'] == "Threads") {
+            $data['img'] = base_url() . '/assets/img/icon/icon-ig.png';
         } else if ($data['platform'] == "Youtube") {
             $data['img'] = base_url() . '/assets/img/icon/icon-youtube.png';
         } else if ($data['platform'] == "Facebook") {
@@ -481,6 +483,8 @@ class Review_endorse extends CI_Controller
         if ($data['type'] == "Tiktok") {
             $data['img_creator_1'] = base_url() . '/assets/img/icon/icon-tiktok.png';
         } else if ($data['type'] == "Instagram") {
+            $data['img_creator_1'] = base_url() . '/assets/img/icon/icon-ig.png';
+        } else if ($data['type'] == "Threads") {
             $data['img_creator_1'] = base_url() . '/assets/img/icon/icon-ig.png';
         } else if ($data['type'] == "Youtube") {
             $data['img_creator_1'] = base_url() . '/assets/img/icon/icon-youtube.png';

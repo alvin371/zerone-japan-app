@@ -338,32 +338,76 @@ class Template
         return $decoded;
     }
 
-    function getDataFromFirstEndpoint($username)
+    function getRapidApiHeaders($withAccept = false)
     {
-        $rapidapi_host = env('RAPIDAPI_HOST', 'tiktok-scraper-api4.p.rapidapi.com');
+        $rapidapi_host = env('RAPIDAPI_HOST', 'tiktok-api23.p.rapidapi.com');
         $rapidapi_key = env('RAPIDAPI_KEY', '');
 
-        $url = "https://{$rapidapi_host}/api/v1/user/info?unique_id=$username";
-        $headers = [
-            "X-RapidAPI-Host: {$rapidapi_host}",
-            "X-RapidAPI-Key: {$rapidapi_key}"
-        ];
+        $headers = array(
+            "x-rapidapi-host: {$rapidapi_host}",
+            "x-rapidapi-key: {$rapidapi_key}",
+        );
 
-        return $this->curlRequest($url, $headers);
+        if ($withAccept) {
+            $headers[] = "Accept: application/json";
+        }
+
+        return $headers;
+    }
+
+    function curlRequestWithRetry($url, $headers, $isValidResponse, $maxRetry = 3, $delayMs = 300)
+    {
+        $lastResponse = null;
+        for ($attempt = 1; $attempt <= $maxRetry; $attempt++) {
+            $lastResponse = $this->curlRequest($url, $headers);
+
+            if (is_callable($isValidResponse) && $isValidResponse($lastResponse)) {
+                return $lastResponse;
+            }
+
+            if ($attempt < $maxRetry) {
+                usleep($delayMs * 1000);
+            }
+        }
+
+        return $lastResponse;
+    }
+
+    function getDataFromFirstEndpoint($username)
+    {
+        $rapidapi_host = env('RAPIDAPI_HOST', 'tiktok-api23.p.rapidapi.com');
+        $url = "https://{$rapidapi_host}/api/user/info?uniqueId=" . urlencode($username);
+        $headers = $this->getRapidApiHeaders();
+
+        return $this->curlRequestWithRetry($url, $headers, function ($resp) {
+            $ok = isset($resp['status_code'])
+                ? intval($resp['status_code']) === 0
+                : (isset($resp['statusCode']) && intval($resp['statusCode']) === 0);
+
+            return $ok && !empty($resp['userInfo']['user']['secUid']);
+        });
+    }
+
+    function getDataFromSearchEndpoint($username)
+    {
+        $rapidapi_host = env('RAPIDAPI_HOST', 'tiktok-api23.p.rapidapi.com');
+        $url = "https://{$rapidapi_host}/api/search/account?keyword="
+            . urlencode($username) . "&cursor=0&search_id=0";
+        $headers = $this->getRapidApiHeaders();
+
+        return $this->curlRequestWithRetry($url, $headers, function ($resp) {
+            $ok = isset($resp['status_code'])
+                ? intval($resp['status_code']) === 0
+                : (isset($resp['statusCode']) && intval($resp['statusCode']) === 0);
+
+            return $ok && !empty($resp['user_list'][0]['user_info']);
+        });
     }
 
     function getDataFromSecondEndpoint($username)
     {
-        $rapidapi_host = env('RAPIDAPI_HOST', 'tiktok-scraper-api4.p.rapidapi.com');
-        $rapidapi_key = env('RAPIDAPI_KEY', '');
-
-        $url = "https://{$rapidapi_host}/api/v1/search/users?keyword=$username";
-        $headers = [
-            "X-RapidAPI-Host: {$rapidapi_host}",
-            "X-RapidAPI-Key: {$rapidapi_key}"
-        ];
-
-        return $this->curlRequest($url, $headers);
+        // Backward compatibility alias.
+        return $this->getDataFromSearchEndpoint($username);
     }
 
     function shorten_text($text, $max = 160)
@@ -445,14 +489,9 @@ class Template
 
     function get_account_id($type, $url)
     {
-        $response = [
-            "status" => true,
-            "msg" => "",
-            "data" => []
-        ];
-
-        $uri = explode("/", parse_url($url, PHP_URL_PATH));
-        $username = $uri[1] ?? null;
+        $path = parse_url($url, PHP_URL_PATH);
+        $uri = explode("/", trim((string) $path, '/'));
+        $username = $uri[0] ?? null;
 
         if (empty($url) || empty($username)) {
             return [
@@ -463,131 +502,57 @@ class Template
         }
 
         if ($type == "Instagram") {
-            $response["status"] = false;
-            $response["msg"] = "Layanan belum tersedia";
-            $response["data"] = array();
-
-            // $curl = curl_init();
-
-            // curl_setopt_array($curl, [
-            //     CURLOPT_URL => "https://api.instagapi.com/userid/$username",
-            //     CURLOPT_RETURNTRANSFER => true,
-            //     CURLOPT_ENCODING => "",
-            //     CURLOPT_MAXREDIRS => 10,
-            //     CURLOPT_TIMEOUT => 30,
-            //     CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-            //     CURLOPT_CUSTOMREQUEST => "GET",
-            //     CURLOPT_HTTPHEADER => [
-            //         "X-InstagAPI-Key: 0aaf6108af3c2962ff24720ffe09748b"
-            //     ],
-            // ]);
-
-            // $responseCurl = curl_exec($curl);
-            // curl_close($curl);
-
-            // $responseCurl = json_decode($responseCurl, true);
-
-            // if ($responseCurl['data']) {
-            //     $data['account_id'] = intval($responseCurl['data']);
-
-            //     $curl = curl_init();
-            //     curl_setopt_array($curl, [
-            //         CURLOPT_URL => "https://api.instagapi.com/usercontact/" . $responseCurl['data'],
-            //         CURLOPT_RETURNTRANSFER => true,
-            //         CURLOPT_ENCODING => "",
-            //         CURLOPT_MAXREDIRS => 10,
-            //         CURLOPT_TIMEOUT => 30,
-            //         CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-            //         CURLOPT_CUSTOMREQUEST => "GET",
-            //         CURLOPT_HTTPHEADER => [
-            //             "X-InstagAPI-Key: 0aaf6108af3c2962ff24720ffe09748b"
-            //         ],
-            //     ]);
-            //     $userDetail = curl_exec($curl);
-            //     curl_close($curl);
-
-            //     $userDetail = json_decode($userDetail, true);
-
-            //     $data['img'] = strval($userDetail['data']['user']['hd_profile_pic_url_info']['url']);
-            //     $data['follower'] = intval($userDetail['data']['user']['follower_count']);
-            //     $data['media_count'] = intval($userDetail['data']['user']['media_count']);
-
-            //     return [
-            //         "status" => true,
-            //         "msg" => "Data ditemukan",
-            //         "data" => $data
-            //     ];
-            // } else {
-            //     return [
-            //         "status" => false,
-            //         "msg" => "Username <b>$username</b> tidak ditemukan",
-            //         "data" => []
-            //     ];
-            // }
+            return [
+                "status" => false,
+                "msg" => "Instagram profile sync berjalan async via queue",
+                "data" => []
+            ];
         } else if ($type == "Tiktok") {
             $username = str_replace('@', '', $username);
 
             $resp1 = $this->getDataFromFirstEndpoint($username);
             $resp2 = null;
-            $isEmpty = true;
 
-            if (isset($resp1['status']) && $resp1['status'] == 'Successful') {
-                if (!empty($resp1['data'][0]['uid'])) {
-                    $isEmpty = false;
-                    $visible_videos_count = $resp1['data'][0]['aweme_count'] ?? null;
-                    $follower_count = $resp1['data'][0]['follower_count'] ?? null;
-                    $uid = $resp1['data'][0]['uid'] ?? null;
-                    $avatar_urls = $resp1['data'][0]['avatar_larger']['url_list'][0] ?? null;
-                    $nickname = $resp1['data'][0]['nickname'] ?? null;
+            if (!empty($resp1['userInfo']['user']['secUid'])) {
+                $userInfo = $resp1['userInfo']['user'] ?? array();
+                $stats = $resp1['userInfo']['stats'] ?? array();
 
-                    $data = [
-                        "account_id" => strval($uid),
-                        "follower" => intval($follower_count),
-                        "media_count" => intval($visible_videos_count),
-                        "img" => $avatar_urls,
-                        "full_name" => $nickname,
-                        "source" => "first_endpoint"
-                    ];
-
-                    return [
-                        "status" => true,
-                        "msg" => "Data ditemukan",
-                        "data" => $data
-                    ];
-                }
+                return [
+                    "status" => true,
+                    "msg" => "Data ditemukan",
+                    "data" => [
+                        "account_id"  => strval($userInfo['secUid'] ?? ''),
+                        "follower"    => intval($stats['followerCount'] ?? 0),
+                        "media_count" => intval($stats['videoCount'] ?? 0),
+                        "img"         => strval($userInfo['avatarLarger'] ?? ''),
+                        "full_name"   => strval($userInfo['nickname'] ?? ($userInfo['uniqueId'] ?? '')),
+                        "username"    => strval($userInfo['uniqueId'] ?? ''),
+                        "source"      => "first_endpoint"
+                    ]
+                ];
             }
 
-            if ($isEmpty) {
-                $resp2 = $this->getDataFromSecondEndpoint($username);
+            $resp2 = $this->getDataFromSearchEndpoint($username);
+            if (!empty($resp2['user_list'][0]['user_info'])) {
+                $userData = $resp2['user_list'][0]['user_info'];
 
-                if (isset($resp2['status']) && $resp2['status'] === 'Successful' && !empty($resp2['data'][0]['user_info'])) {
-                    $userData = $resp2['data'][0]['user_info'];
-
-                    $uid = $userData['sec_uid'] ?? null;
-                    $follower_count = $userData['follower_count'] ?? null;
-                    $visible_videos_count = $userData['video_count'] ?? null;
-                    $avatar_urls = $userData['avatar_thumb']['url_list'][0] ?? null;
-                    $unique_id = $userData['unique_id'] ?? null;
-                    $nickname = $userData['nickname'] ?? null;
-
-                    $data = [
-                        "account_id"   => strval($uid),
-                        "follower"     => intval($follower_count),
-                        "media_count"  => intval($visible_videos_count),
-                        "img"          => $avatar_urls,
-                        "full_name"    => $nickname,
-                    ];
-
-                    return [
-                        "status" => true,
-                        "msg"    => "Data ditemukan",
-                        "data"   => $data
-                    ];
-                }
+                return [
+                    "status" => true,
+                    "msg"    => "Data ditemukan",
+                    "data"   => [
+                        "account_id"  => strval($userData['sec_uid'] ?? ''),
+                        "follower"    => intval($userData['follower_count'] ?? 0),
+                        "media_count" => intval($userData['item_count'] ?? ($userData['video_count'] ?? 0)),
+                        "img"         => strval($userData['avatar_thumb']['url_list'][0] ?? ''),
+                        "full_name"   => strval($userData['nickname'] ?? ($userData['unique_id'] ?? '')),
+                        "username"    => strval($userData['unique_id'] ?? ''),
+                        "source"      => "search_endpoint"
+                    ]
+                ];
             }
 
-            $detail_1 = $this->format_endpoint_detail('Endpoint 1: user/info', $resp1, 'uid');
-            $detail_2 = $this->format_endpoint_detail('Endpoint 2: search/users', $resp2, 'user_info');
+            $detail_1 = $this->format_endpoint_detail('Endpoint 1: user/info', $resp1, 'secUid');
+            $detail_2 = $this->format_endpoint_detail('Endpoint 2: search/account', $resp2, 'user_info');
 
             $this->log_endpoint_trace('tiktok_user_not_found', [
                 "username" => $username,
@@ -666,50 +631,33 @@ class Template
             //     $response["data"] = array();
             // }
         } else if ($type == "Tiktok") {
-            $rapidapi_host = env('RAPIDAPI_HOST', 'tiktok-scraper-api4.p.rapidapi.com');
-            $rapidapi_key = env('RAPIDAPI_KEY', '');
+            $rapidapi_host = env('RAPIDAPI_HOST', 'tiktok-api23.p.rapidapi.com');
+            $url = "https://{$rapidapi_host}/api/user/posts?secUid="
+                . urlencode($account_id) . "&count=10&cursor=0";
 
-            $curl = curl_init();
-            curl_setopt_array($curl, [
-                CURLOPT_URL => "https://{$rapidapi_host}/api/v1/user/posts?sec_uid=" . urlencode($account_id) . "&count=10",
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_ENCODING => "",
-                CURLOPT_MAXREDIRS => 10,
-                CURLOPT_TIMEOUT => 30,
-                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-                CURLOPT_CUSTOMREQUEST => "GET",
-                CURLOPT_HTTPHEADER => [
-                    "X-RapidAPI-Host: {$rapidapi_host}",
-                    "X-RapidAPI-Key: {$rapidapi_key}",
-                    "Accept: application/json"
-                ],
-            ]);
+            $resp = $this->curlRequestWithRetry($url, $this->getRapidApiHeaders(true), function ($r) {
+                $dataBlock = $r['data'] ?? array();
+                $ok = isset($dataBlock['status_code'])
+                    ? intval($dataBlock['status_code']) === 0
+                    : (isset($dataBlock['statusCode']) && intval($dataBlock['statusCode']) === 0);
 
-            $response = curl_exec($curl);
+                return $ok && !empty($dataBlock['itemList']);
+            });
 
-            if ($response === false) {
-                echo 'cURL error: ' . curl_error($curl);
-                die;
-            }
-
-            curl_close($curl);
-
-            $response = json_decode($response, true);
-
-            if ($response['status'] == 'Successful' && isset($response['data']) && is_array($response['data']) && count($response['data']) > 0) {
+            $items = $resp['data']['itemList'] ?? array();
+            if (!empty($items)) {
                 $response["status"] = true;
                 $response["msg"] = "Data ditemukan";
 
-                $response['data'] = array_slice($response['data'], 0, 10);
-
+                $items = array_slice($items, 0, 10);
                 $arr = array();
-                foreach ($response['data'] as $k => $v) {
-                    $detail = $v['stats'] ?? [];
-                    $arr[$k]["like"]    = intval($detail['diggCount'] ?? 0);
-                    $arr[$k]["share"]   = intval($detail['shareCount'] ?? 0);
+                foreach ($items as $k => $v) {
+                    $detail = $v['stats'] ?? array();
+                    $arr[$k]["like"] = intval($detail['diggCount'] ?? 0);
+                    $arr[$k]["share"] = intval($detail['shareCount'] ?? 0);
                     $arr[$k]["comment"] = intval($detail['commentCount'] ?? 0);
                     $arr[$k]["collect"] = intval($detail['collectCount'] ?? 0);
-                    $arr[$k]["view"]    = intval($detail['playCount'] ?? 0);
+                    $arr[$k]["view"] = intval($detail['playCount'] ?? 0);
                 }
                 $response["data"] = $arr;
             } else {
@@ -733,96 +681,57 @@ class Template
         $response["msg"] = "";
         $response["data"] = array();
         if ($type == "Tiktok") {
-            if ($url) {
-                $curl = curl_init();
-                curl_setopt_array($curl, array(
-                    CURLOPT_URL => $url,
-                    CURLOPT_RETURNTRANSFER => true,
-                    CURLOPT_ENCODING => '',
-                    CURLOPT_MAXREDIRS => 10,
-                    CURLOPT_TIMEOUT => 0,
-                    CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:100.0) Gecko/20100101 Firefox/100.0',
-                    CURLOPT_FOLLOWLOCATION => true,
-                    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-                    CURLOPT_CUSTOMREQUEST => 'GET',
-                    CURLOPT_HTTPHEADER => array(
-                        'Cookie: tt_chain_token=+O8Mw9RH4nKrX/ACdOBhXw==; tt_csrf_token=27TtpaB8-Wftkj0rFR_w6LdtcAp4tdDCFfBY; ttwid=1%7CdJI7LAdiTNKwSISqHad9wDTJ6G_70WU_PGro2isx-ac%7C1705385087%7C518efef116162148489d7f25fa3c7b06633a23c824590f04ea0226d5c2b6f092'
-                    ),
-                ));
-
-                $responsee = curl_exec($curl);
-
-                curl_close($curl);
-
-                $html = "$responsee";
-
-                $pattern = '/<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application\/json">(.*?)<\/script>/s';
-                preg_match($pattern, $html, $matches);
-                if (isset($matches[1])) {
-                    $jsonContent = $matches[1];
-                    $jsonData = json_decode($jsonContent, true)['__DEFAULT_SCOPE__']['webapp.video-detail']['itemInfo']['itemStruct'];
-                    $response["status"] = true;
-                    $response["msg"] = "";
-                    if (intval($jsonData['stats']['playCount']) > 0) {
-                        $response["data"]["like"] = intval($jsonData['stats']['diggCount']);
-                        $response["data"]["share"] = intval($jsonData['stats']['shareCount']);
-                        $response["data"]["comment"] = intval($jsonData['stats']['commentCount']);
-                        $response["data"]["collect"] = intval($jsonData['stats']['collectCount']);
-                        $response["data"]["view"] = intval($jsonData['stats']['playCount']);
-                        $response['data']['created_at'] = DATE("Y-m-d", $jsonData['createTime']);
-                    } else {
-                        $parts = explode('/photo/', $url);
-                        $parts = explode('?', end($parts));
-                        $content_id = $parts[0];
-
-                        $rapidapi_host = env('RAPIDAPI_HOST', 'tiktok-scraper-api4.p.rapidapi.com');
-                        $rapidapi_key = env('RAPIDAPI_KEY', '');
-
-                        $curl = curl_init();
-
-                        curl_setopt_array($curl, [
-                            CURLOPT_URL => "https://{$rapidapi_host}/api/v1/post/info?video_id=$content_id",
-                            CURLOPT_RETURNTRANSFER => true,
-                            CURLOPT_ENCODING => "",
-                            CURLOPT_MAXREDIRS => 10,
-                            CURLOPT_TIMEOUT => 30,
-                            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-                            CURLOPT_CUSTOMREQUEST => "GET",
-                            CURLOPT_HTTPHEADER => [
-                                "X-RapidAPI-Host: {$rapidapi_host}",
-                                "X-RapidAPI-Key: {$rapidapi_key}"
-                            ],
-                        ]);
-
-                        $responsee = curl_exec($curl);
-
-                        curl_close($curl);
-
-                        $responsee = json_decode($responsee, true);
-                        
-                        $jsonData = $responsee['data']['stats'];
-                        if (intval($jsonData['playCount']) > 0) {
-                            $response["data"]["like"] = intval($jsonData['diggCount']);
-                            $response["data"]["share"] = intval($jsonData['shareCount']);
-                            $response["data"]["comment"] = intval($jsonData['commentCount']);
-                            $response["data"]["collect"] = intval($jsonData['collectCount']);
-                            $response["data"]["view"] = intval($jsonData['playCount']);
-                            $response["data"]["created_at"] = date("Y-m-d", $responsee['data']['createTime']);
-                        } else {
-                            $response["status"] = false;
-                            $response["msg"] = "Response tiktok " . $content_id . " tidak ditemukan";
-                            $response["data"] = array();
-                        }
-                    }
-                } else {
-                    $response["status"] = false;
-                    $response["msg"] = "Response tiktok " . $url . " tidak ditemukan";
-                    $response["data"] = array();
-                }
-            } else {
+            if (!$url) {
                 $response["status"] = false;
                 $response["msg"] = "URL tidak ditemukan";
                 $response["data"] = array();
+                return $response;
+            }
+
+            $content_id = '';
+            if (preg_match('/\/video\/(\d+)/', $url, $matches)) {
+                $content_id = $matches[1];
+            } else if (preg_match('/\/photo\/(\d+)/', $url, $matches)) {
+                $content_id = $matches[1];
+            } else if (preg_match('/(\d{10,25})/', $url, $matches)) {
+                $content_id = $matches[1];
+            }
+
+            if (!$content_id) {
+                $response["status"] = false;
+                $response["msg"] = "ID konten TikTok tidak ditemukan dari URL";
+                $response["data"] = array();
+                return $response;
+            }
+
+            $rapidapi_host = env('RAPIDAPI_HOST', 'tiktok-api23.p.rapidapi.com');
+            $detail_url = "https://{$rapidapi_host}/api/post/detail?videoId=" . $content_id;
+            $resp = $this->curlRequestWithRetry($detail_url, $this->getRapidApiHeaders(), function ($r) {
+                $ok = isset($r['status_code'])
+                    ? intval($r['status_code']) === 0
+                    : (isset($r['statusCode']) && intval($r['statusCode']) === 0);
+
+                return $ok && !empty($r['itemInfo']['itemStruct']);
+            });
+
+            $itemStruct = $resp['itemInfo']['itemStruct'] ?? array();
+            if (empty($itemStruct)) {
+                $response["status"] = false;
+                $response["msg"] = "Response tiktok " . $content_id . " tidak ditemukan";
+                $response["data"] = array();
+                return $response;
+            }
+
+            $stats = $itemStruct['stats'] ?? array();
+            $response["status"] = true;
+            $response["msg"] = "";
+            $response["data"]["like"] = intval($stats['diggCount'] ?? 0);
+            $response["data"]["share"] = intval($stats['shareCount'] ?? 0);
+            $response["data"]["comment"] = intval($stats['commentCount'] ?? 0);
+            $response["data"]["collect"] = intval($stats['collectCount'] ?? 0);
+            $response["data"]["view"] = intval($stats['playCount'] ?? 0);
+            if (!empty($itemStruct['createTime'])) {
+                $response["data"]["created_at"] = date("Y-m-d", intval($itemStruct['createTime']));
             }
         } else if ($type == "Instagram") {
             $response["status"] = false;
@@ -901,12 +810,645 @@ class Template
             //     $response["msg"] = "URL tidak ditemukan";
             //     $response["data"] = array();
             // }
+        } else if ($type == "Threads") {
+            $defaultData = array(
+                'like' => 0,
+                'share' => 0,
+                'comment' => 0,
+                'collect' => 0,
+                'view' => 0,
+                'created_at' => '',
+            );
+
+            if (!$url) {
+                $response["status"] = false;
+                $response["msg"] = "URL tidak ditemukan";
+                $response["data"] = $defaultData;
+                return $response;
+            }
+
+            $CI =& get_instance();
+            $CI->load->library('scrapingbot');
+
+            $start = $CI->scrapingbot->scrapeThreadsPost($url);
+            if (empty($start['status']) || empty($start['responseId'])) {
+                $response["status"] = false;
+                $response["msg"] = $start['msg'] ?? "Gagal submit scraping Threads";
+                $response["data"] = $defaultData;
+                return $response;
+            }
+
+            $maxAttempts = 12;
+            $pollResult = null;
+            for ($i = 0; $i < $maxAttempts; $i++) {
+                $pollResult = $CI->scrapingbot->pollResult('threadsPost', $start['responseId']);
+                if (($pollResult['status'] ?? '') === 'success') {
+                    break;
+                }
+                if (($pollResult['status'] ?? '') === 'error') {
+                    $response["status"] = false;
+                    $response["msg"] = $pollResult['msg'] ?? "Scraping Threads gagal";
+                    $response["data"] = $defaultData;
+                    return $response;
+                }
+                usleep(1500000);
+            }
+
+            if (($pollResult['status'] ?? '') !== 'success') {
+                $response["status"] = false;
+                $response["msg"] = "Timeout menunggu hasil scraping Threads";
+                $response["data"] = $defaultData;
+                return $response;
+            }
+
+            $parsed = $this->parseThreadsPostResponse($pollResult['data'] ?? array());
+            $response["status"] = true;
+            $response["msg"] = "";
+            $response["data"]["like"] = intval($parsed['like'] ?? 0);
+            $response["data"]["share"] = intval($parsed['share'] ?? 0);
+            $response["data"]["comment"] = intval($parsed['comment'] ?? 0);
+            $response["data"]["collect"] = intval($parsed['collect'] ?? 0);
+            $response["data"]["view"] = intval($parsed['view'] ?? 0);
+            $response["data"]["created_at"] = strval($parsed['created_at'] ?? '');
         } else {
             $response["status"] = false;
             $response["msg"] = "Platform belum tersedia";
             $response["data"] = array();
         }
         return $response;
+    }
+
+    function enqueue_scrape($entityType, $entityId, $type, $url, $priority = 5)
+    {
+        $CI =& get_instance();
+        $CI->load->library('scrapingbot');
+
+        if (empty($url) || empty($entityId) || empty($entityType)) {
+            return ['status' => false, 'msg' => 'Parameter enqueue tidak lengkap'];
+        }
+
+        $params = $CI->scrapingbot->buildScrapeParams($type, $url);
+        if (!$params) {
+            return ['status' => false, 'msg' => 'Invalid platform or URL'];
+        }
+
+        $existing = $CI->db->select('id')
+            ->where('entity_type', $entityType)
+            ->where('entity_id', $entityId)
+            ->where_in('status', ['pending', 'submitted'])
+            ->get('scraping_queue')
+            ->num_rows();
+
+        if ($existing > 0) {
+            return ['status' => true, 'msg' => 'Already in queue'];
+        }
+
+        $CI->db->insert('scraping_queue', [
+            'entity_type' => $entityType,
+            'entity_id' => intval($entityId),
+            'scraper' => $params['scraper'],
+            'scrape_url' => json_encode($params['params']),
+            'status' => 'pending',
+            'priority' => intval($priority),
+            'created_at' => date('Y-m-d H:i:s'),
+        ]);
+
+        return ['status' => true, 'msg' => 'Added to queue'];
+    }
+
+    function parseTiktokProfileResponse($data)
+    {
+        $result = [
+            'profile' => [
+                'account_id' => '',
+                'follower' => 0,
+                'media_count' => 0,
+                'img' => '',
+                'full_name' => '',
+            ],
+            'posts' => [],
+        ];
+
+        if (empty($data)) {
+            return $result;
+        }
+
+        $allPosts = [];
+        if (isset($data[0]) && is_array($data[0])) {
+            $allPosts = $data;
+
+            $profileItem = null;
+            foreach ($data as $item) {
+                if (is_array($item) && ($item['type'] ?? null) === 'profile') {
+                    $profileItem = $item;
+                    break;
+                }
+            }
+            $data = $profileItem ?? $data[0];
+        }
+
+        $result['profile']['account_id'] = strval($data['sec_uid'] ?? ($data['id'] ?? ''));
+        $result['profile']['follower'] = intval($data['follower_count'] ?? ($data['followers'] ?? 0));
+        $result['profile']['media_count'] = intval($data['videos_count'] ?? ($data['video_count'] ?? 0));
+        $result['profile']['img'] = strval($data['avatar'] ?? ($data['avatar_thumb'] ?? ''));
+        $result['profile']['full_name'] = strval($data['nickname'] ?? ($data['unique_id'] ?? ''));
+
+        $videos = $data['top_videos'] ?? ($data['videos'] ?? ($allPosts ?: []));
+        $videos = array_slice($videos, 0, 10);
+
+        foreach ($videos as $k => $v) {
+            $result['posts'][$k] = [
+                'like' => intval($v['diggCount'] ?? ($v['likes'] ?? ($v['stats']['diggCount'] ?? 0))),
+                'share' => intval($v['shareCount'] ?? ($v['shares'] ?? ($v['stats']['shareCount'] ?? 0))),
+                'comment' => intval($v['commentCount'] ?? ($v['comments'] ?? ($v['stats']['commentCount'] ?? 0))),
+                'collect' => intval($v['collectCount'] ?? ($v['saves'] ?? ($v['stats']['collectCount'] ?? 0))),
+                'view' => intval($v['playCount'] ?? ($v['views'] ?? ($v['stats']['playCount'] ?? 0))),
+            ];
+        }
+
+        return $result;
+    }
+
+    function parseInstagramProfileResponse($data)
+    {
+        $result = [
+            'profile' => [
+                'account_id' => '',
+                'follower' => 0,
+                'media_count' => 0,
+                'img' => '',
+                'full_name' => '',
+            ],
+            'posts' => [],
+        ];
+
+        if (empty($data)) {
+            return $result;
+        }
+
+        $allPosts = [];
+        if (isset($data[0]) && is_array($data[0])) {
+            $allPosts = $data;
+
+            $profileItem = null;
+            foreach ($data as $item) {
+                if (is_array($item) && ($item['type'] ?? null) === 'profile') {
+                    $profileItem = $item;
+                    break;
+                }
+            }
+            $data = $profileItem ?? $data[0];
+        }
+
+        $result['profile']['account_id'] = strval($data['author_id'] ?? ($data['id'] ?? ($data['pk'] ?? '')));
+        $result['profile']['follower'] = intval($data['follower_count'] ?? ($data['followers'] ?? 0));
+        $result['profile']['media_count'] = intval($data['posts_count'] ?? ($data['post_count'] ?? ($data['media_count'] ?? 0)));
+        $result['profile']['img'] = strval($data['profile_image_link'] ?? ($data['profile_picture'] ?? ($data['profile_pic_url'] ?? '')));
+        $result['profile']['full_name'] = strval($data['profile_name'] ?? ($data['full_name'] ?? ($data['username'] ?? '')));
+
+        $posts = $data['posts'] ?? ($data['edge_owner_to_timeline_media']['edges'] ?? ($allPosts ?: []));
+        $posts = array_slice($posts, 0, 12);
+
+        foreach ($posts as $k => $v) {
+            $node = $v['node'] ?? $v;
+            $result['posts'][$k] = [
+                'like' => intval($node['like_count'] ?? ($node['edge_media_preview_like']['count'] ?? ($node['likes'] ?? 0))),
+                'share' => 0,
+                'comment' => intval($node['comment_count'] ?? ($node['edge_media_to_comment']['count'] ?? ($node['comments'] ?? 0))),
+                'collect' => 0,
+                'view' => intval($node['video_view_count'] ?? ($node['views'] ?? 0)),
+            ];
+        }
+
+        return $result;
+    }
+
+    function normalizeMetricNumber($value)
+    {
+        if (is_int($value) || is_float($value)) {
+            return intval($value);
+        }
+
+        if (is_string($value)) {
+            $raw = trim($value);
+            if ($raw === '') {
+                return 0;
+            }
+
+            $normalized = strtoupper(str_replace([',', ' '], ['', ''], $raw));
+            if (preg_match('/^([0-9]+(?:\.[0-9]+)?)([KMB])$/', $normalized, $m)) {
+                $num = floatval($m[1]);
+                $suffix = $m[2];
+                if ($suffix === 'K') {
+                    return intval($num * 1000);
+                }
+                if ($suffix === 'M') {
+                    return intval($num * 1000000);
+                }
+                if ($suffix === 'B') {
+                    return intval($num * 1000000000);
+                }
+            }
+
+            $digits = preg_replace('/[^0-9]/', '', $raw);
+            if ($digits !== '') {
+                return intval($digits);
+            }
+        }
+
+        return 0;
+    }
+
+    function parseThreadsProfileResponse($data)
+    {
+        $result = [
+            'profile' => [
+                'account_id' => '',
+                'follower' => 0,
+                'media_count' => 0,
+                'img' => '',
+                'full_name' => '',
+            ],
+            'posts' => [],
+        ];
+
+        if (empty($data)) {
+            return $result;
+        }
+
+        $allPosts = [];
+        if (isset($data[0]) && is_array($data[0])) {
+            $allPosts = $data;
+
+            $profileItem = null;
+            foreach ($data as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+
+                if (($item['type'] ?? null) === 'profile') {
+                    $profileItem = $item;
+                    break;
+                }
+
+                if (
+                    isset($item['follower_count']) ||
+                    isset($item['followers']) ||
+                    isset($item['profile_name']) ||
+                    isset($item['username'])
+                ) {
+                    $profileItem = $item;
+                    break;
+                }
+            }
+            $data = $profileItem ?? $data[0];
+        }
+
+        $result['profile']['account_id'] = strval($data['author_id'] ?? ($data['id'] ?? ($data['pk'] ?? ($data['username'] ?? ''))));
+        $result['profile']['follower'] = $this->normalizeMetricNumber($data['follower_count'] ?? ($data['followers'] ?? ($data['followers_count'] ?? 0)));
+        $result['profile']['media_count'] = $this->normalizeMetricNumber($data['posts_count'] ?? ($data['post_count'] ?? ($data['media_count'] ?? ($data['threads_count'] ?? 0))));
+        $result['profile']['img'] = strval($data['profile_image_link'] ?? ($data['profile_picture'] ?? ($data['profile_pic_url'] ?? ($data['avatar'] ?? ''))));
+        $result['profile']['full_name'] = strval($data['profile_name'] ?? ($data['full_name'] ?? ($data['username'] ?? ($data['name'] ?? ''))));
+
+        $posts = $data['posts'] ?? ($data['threads'] ?? ($data['top_posts'] ?? ($allPosts ?: [])));
+        $posts = array_slice($posts, 0, 12);
+
+        foreach ($posts as $k => $v) {
+            $node = $v['node'] ?? $v;
+            if (($node['type'] ?? '') === 'profile') {
+                continue;
+            }
+            $stats = $node['stats'] ?? ($node['statistics'] ?? []);
+
+            $result['posts'][$k] = [
+                'like' => $this->normalizeMetricNumber($node['like_count'] ?? ($node['likes'] ?? ($stats['like_count'] ?? ($stats['likes'] ?? 0)))),
+                'share' => $this->normalizeMetricNumber($node['repost_count'] ?? ($node['share_count'] ?? ($node['shares'] ?? ($stats['repost_count'] ?? ($stats['share_count'] ?? 0))))),
+                'comment' => $this->normalizeMetricNumber($node['comment_count'] ?? ($node['reply_count'] ?? ($node['comments'] ?? ($stats['comment_count'] ?? ($stats['reply_count'] ?? 0))))),
+                'collect' => $this->normalizeMetricNumber($node['save_count'] ?? ($node['bookmark_count'] ?? ($stats['save_count'] ?? ($stats['bookmark_count'] ?? 0)))),
+                'view' => $this->normalizeMetricNumber($node['view_count'] ?? ($node['views'] ?? ($node['play_count'] ?? ($stats['view_count'] ?? ($stats['views'] ?? 0))))),
+            ];
+        }
+
+        return $result;
+    }
+
+    function parseThreadsPostResponse($data)
+    {
+        $item = $data;
+        if (isset($data[0]) && is_array($data[0])) {
+            $item = $data[0];
+            foreach ($data as $candidate) {
+                if (!is_array($candidate)) {
+                    continue;
+                }
+                if (($candidate['type'] ?? '') === 'profile') {
+                    continue;
+                }
+                $item = $candidate;
+                break;
+            }
+        }
+
+        if (isset($item['post']) && is_array($item['post'])) {
+            $item = $item['post'];
+        } else if (isset($item['thread']) && is_array($item['thread'])) {
+            $item = $item['thread'];
+        }
+
+        $stats = $item['stats'] ?? ($item['statistics'] ?? ($item['engagement'] ?? []));
+
+        $createdAt = $item['created_at'] ?? ($item['timestamp'] ?? ($item['date'] ?? ($item['taken_at'] ?? '')));
+        if (is_numeric($createdAt)) {
+            $ts = intval($createdAt);
+            if ($ts > 9999999999) {
+                $ts = intval($ts / 1000);
+            }
+            $createdAt = $ts > 0 ? date('Y-m-d', $ts) : '';
+        } else if (is_string($createdAt) && trim($createdAt) !== '') {
+            $ts = strtotime($createdAt);
+            $createdAt = $ts ? date('Y-m-d', $ts) : '';
+        } else {
+            $createdAt = '';
+        }
+
+        return [
+            'like' => $this->normalizeMetricNumber($item['like_count'] ?? ($item['likes'] ?? ($stats['like_count'] ?? ($stats['likes'] ?? 0)))),
+            'share' => $this->normalizeMetricNumber($item['repost_count'] ?? ($item['share_count'] ?? ($item['shares'] ?? ($stats['repost_count'] ?? ($stats['share_count'] ?? 0))))),
+            'comment' => $this->normalizeMetricNumber($item['comment_count'] ?? ($item['reply_count'] ?? ($item['comments'] ?? ($stats['comment_count'] ?? ($stats['reply_count'] ?? 0))))),
+            'collect' => $this->normalizeMetricNumber($item['save_count'] ?? ($item['bookmark_count'] ?? ($stats['save_count'] ?? ($stats['bookmark_count'] ?? 0)))),
+            'view' => $this->normalizeMetricNumber($item['view_count'] ?? ($item['views'] ?? ($item['play_count'] ?? ($stats['view_count'] ?? ($stats['views'] ?? 0))))),
+            'created_at' => $createdAt,
+        ];
+    }
+
+    function process_scrape_result($queueItem, $resultData)
+    {
+        $CI =& get_instance();
+        $entityType = $queueItem['entity_type'];
+        $entityId = intval($queueItem['entity_id']);
+        $scraper = $queueItem['scraper'];
+
+        if (!in_array($entityType, ['influencer', 'influencer_dummy'])) {
+            return false;
+        }
+
+        if ($scraper === 'tiktokProfile') {
+            $parsed = $this->parseTiktokProfileResponse($resultData);
+        } else if ($scraper === 'instagramProfile') {
+            $parsed = $this->parseInstagramProfileResponse($resultData);
+        } else if ($scraper === 'threadsProfile') {
+            $parsed = $this->parseThreadsProfileResponse($resultData);
+        } else {
+            return false;
+        }
+
+        if (empty($parsed['profile']['account_id']) && $parsed['profile']['follower'] <= 0) {
+            log_message('error', "ScrapingBot: Empty parse result for {$entityType}#{$entityId}, skipping update");
+            return false;
+        }
+
+        $userId = strval($_SESSION['user']['id'] ?? '1');
+
+        $profileUpdate = [
+            'account_id' => $parsed['profile']['account_id'],
+            'img' => $parsed['profile']['img'],
+            'follower' => $parsed['profile']['follower'],
+            'media_count' => $parsed['profile']['media_count'],
+            'updated_at' => date('Y-m-d H:i:s'),
+            'updated_by' => $userId,
+        ];
+        if (!empty($parsed['profile']['full_name'])) {
+            $profileUpdate['full_name'] = $parsed['profile']['full_name'];
+        }
+        $CI->db->update($entityType, $profileUpdate, ['id' => $entityId]);
+
+        if (!empty($parsed['posts'])) {
+            $like = 0;
+            $comment = 0;
+            $collect = 0;
+            $share = 0;
+            $view = 0;
+            $i = 0;
+
+            foreach ($parsed['posts'] as $post) {
+                $like += intval($post['like'] ?? 0);
+                $comment += intval($post['comment'] ?? 0);
+                $collect += intval($post['collect'] ?? 0);
+                $share += intval($post['share'] ?? 0);
+                $view += intval($post['view'] ?? 0);
+                $i++;
+                if ($i >= 10) {
+                    break;
+                }
+            }
+
+            $avg_view = $i ? $view / $i : 0;
+            $avg_interaksi = $i ? ($like + $comment + $collect + $share) / $i : 0;
+            $er = ($avg_view > 0) ? ($avg_interaksi / $avg_view * 100) : 0;
+
+            $record = $CI->db->select('ratecard')->where('id', $entityId)->get($entityType)->row_array();
+            $ratecard = floatval($record['ratecard'] ?? 0);
+            $cpm = ($ratecard > 0 && $avg_view > 0) ? ($ratecard / $avg_view * 1000) : 0;
+
+            $metricsUpdate = [
+                'sync_at' => date('Y-m-d H:i:s'),
+                'updated_at' => date('Y-m-d H:i:s'),
+                'updated_by' => $userId,
+                'frequency_2' => $i,
+                'view_2' => $view,
+                'like_2' => $like,
+                'collect_2' => $collect,
+                'share_2' => $share,
+                'comment_2' => $comment,
+                'avg_view_2' => $avg_view,
+                'avg_interaksi_2' => $avg_interaksi,
+                'er' => $er,
+                'cpm_2' => $cpm,
+            ];
+
+            $CI->db->update($entityType, $metricsUpdate, ['id' => $entityId]);
+
+            if ($entityType === 'influencer') {
+                $today = date('Y-m-d');
+                $existing = $CI->db->select('id')
+                    ->where('id_influencer', $entityId)
+                    ->where("DATE(date) = '{$today}'", null, false)
+                    ->get('influencer_logs')
+                    ->row_array();
+
+                $logData = [
+                    'like' => $like,
+                    'comment' => $comment,
+                    'collect' => $collect,
+                    'share' => $share,
+                    'view' => $view,
+                    'avg_view' => $avg_view,
+                    'avg_interaksi' => $avg_interaksi,
+                    'er' => $er,
+                    'sync_at' => date('Y-m-d H:i:s'),
+                    'updated_at' => date('Y-m-d H:i:s'),
+                ];
+                if ($existing) {
+                    $CI->db->update('influencer_logs', $logData, ['id' => $existing['id']]);
+                } else {
+                    $logData['id_influencer'] = $entityId;
+                    $logData['date'] = $today;
+                    $logData['status'] = 'Aktif';
+                    $logData['created_at'] = date('Y-m-d H:i:s');
+                    $CI->db->insert('influencer_logs', $logData);
+                }
+            }
+        }
+
+        return true;
+    }
+
+    function syncTiktokProfile($entityType, $entityId, $type, $url)
+    {
+        $CI =& get_instance();
+
+        if ($type !== 'Tiktok') {
+            return [
+                'status' => false,
+                'msg' => 'Platform bukan TikTok',
+                'data' => []
+            ];
+        }
+
+        if (!in_array($entityType, ['influencer', 'influencer_dummy'])) {
+            return [
+                'status' => false,
+                'msg' => 'Entity type tidak didukung',
+                'data' => []
+            ];
+        }
+
+        $entityId = intval($entityId);
+        if ($entityId <= 0 || empty($url)) {
+            return [
+                'status' => false,
+                'msg' => 'Parameter tidak valid',
+                'data' => []
+            ];
+        }
+
+        $record = $CI->db->where('id', $entityId)->get($entityType)->row_array();
+        if (!$record) {
+            return [
+                'status' => false,
+                'msg' => 'Data tidak ditemukan',
+                'data' => []
+            ];
+        }
+
+        $profileResp = $this->get_account_id('Tiktok', $url);
+        if (!$profileResp['status']) {
+            return $profileResp;
+        }
+
+        $userId = strval($_SESSION['user']['id'] ?? '1');
+        $profileData = $profileResp['data'];
+
+        $profileUpdate = [
+            'account_id' => strval($profileData['account_id'] ?? ''),
+            'img' => strval($profileData['img'] ?? ''),
+            'follower' => intval($profileData['follower'] ?? 0),
+            'media_count' => intval($profileData['media_count'] ?? 0),
+            'updated_at' => date('Y-m-d H:i:s'),
+            'updated_by' => $userId,
+        ];
+        if (!empty($profileData['full_name'])) {
+            $profileUpdate['full_name'] = $profileData['full_name'];
+        }
+        $CI->db->update($entityType, $profileUpdate, ['id' => $entityId]);
+
+        $postResp = $this->get_post_list('Tiktok', $profileUpdate['account_id']);
+        if (!$postResp['status']) {
+            return $postResp;
+        }
+
+        $like = 0;
+        $comment = 0;
+        $collect = 0;
+        $share = 0;
+        $view = 0;
+        $i = 0;
+        foreach ($postResp['data'] as $post) {
+            $like += intval($post['like'] ?? 0);
+            $comment += intval($post['comment'] ?? 0);
+            $collect += intval($post['collect'] ?? 0);
+            $share += intval($post['share'] ?? 0);
+            $view += intval($post['view'] ?? 0);
+            $i++;
+            if ($i >= 10) {
+                break;
+            }
+        }
+
+        $avgView = $i ? $view / $i : 0;
+        $avgInteraksi = $i ? ($like + $comment + $collect + $share) / $i : 0;
+        $er = ($avgView > 0) ? ($avgInteraksi / $avgView * 100) : 0;
+        $ratecard = floatval($record['ratecard'] ?? 0);
+        $cpm = ($ratecard > 0 && $avgView > 0) ? ($ratecard / $avgView * 1000) : 0;
+
+        $metricsUpdate = [
+            'sync_at' => date('Y-m-d H:i:s'),
+            'updated_at' => date('Y-m-d H:i:s'),
+            'updated_by' => $userId,
+            'frequency_2' => $i,
+            'view_2' => $view,
+            'like_2' => $like,
+            'collect_2' => $collect,
+            'share_2' => $share,
+            'comment_2' => $comment,
+            'avg_view_2' => $avgView,
+            'avg_interaksi_2' => $avgInteraksi,
+            'er' => $er,
+            'cpm_2' => $cpm,
+        ];
+
+        $CI->db->update($entityType, $metricsUpdate, ['id' => $entityId]);
+
+        if ($entityType === 'influencer') {
+            $today = date('Y-m-d');
+            $existingLog = $CI->db->select('id')
+                ->where('id_influencer', $entityId)
+                ->where('date', $today)
+                ->get('influencer_logs')
+                ->row_array();
+
+            $logData = [
+                'sync_at' => date('Y-m-d H:i:s'),
+                'like' => $like,
+                'comment' => $comment,
+                'collect' => $collect,
+                'share' => $share,
+                'view' => $view,
+                'avg_view' => $avgView,
+                'avg_interaksi' => $avgInteraksi,
+                'er' => $er,
+                'updated_at' => date('Y-m-d H:i:s'),
+            ];
+
+            if ($existingLog) {
+                $CI->db->update('influencer_logs', $logData, ['id' => $existingLog['id']]);
+            } else {
+                $logData['id_influencer'] = $entityId;
+                $logData['date'] = $today;
+                $logData['status'] = 'Aktif';
+                $logData['created_at'] = date('Y-m-d H:i:s');
+                $CI->db->insert('influencer_logs', $logData);
+            }
+        }
+
+        return [
+            'status' => true,
+            'msg' => 'Data TikTok berhasil disinkronkan',
+            'data' => [
+                'profile' => $profileUpdate,
+                'metrics' => $metricsUpdate,
+            ]
+        ];
     }
 
     function title()
