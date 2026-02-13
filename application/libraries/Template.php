@@ -420,6 +420,42 @@ class Template
         return substr($text, 0, $max - 3) . '...';
     }
 
+    function extract_response_message($response)
+    {
+        if (!is_array($response)) {
+            return '';
+        }
+
+        $message = $response['message'] ?? ($response['msg'] ?? ($response['error'] ?? ''));
+        if ($message !== '') {
+            return strtolower((string) $message);
+        }
+
+        $nested = $response['data']['message'] ?? ($response['data']['msg'] ?? '');
+        return strtolower((string) $nested);
+    }
+
+    function is_rate_limited_response($response)
+    {
+        if (!is_array($response)) {
+            return false;
+        }
+
+        $httpCode = intval($response['__meta']['http_code'] ?? 0);
+        if ($httpCode === 429) {
+            return true;
+        }
+
+        $message = $this->extract_response_message($response);
+        if ($message === '') {
+            return false;
+        }
+
+        return (strpos($message, 'too many requests') !== false)
+            || (strpos($message, 'rate limit') !== false)
+            || (strpos($message, 'quota') !== false);
+    }
+
     function sanitize_endpoint_response($response)
     {
         if (!is_array($response)) {
@@ -551,6 +587,25 @@ class Template
                 ];
             }
 
+            $rateLimited1 = $this->is_rate_limited_response($resp1);
+            $rateLimited2 = $this->is_rate_limited_response($resp2);
+            if ($rateLimited1 || $rateLimited2) {
+                $this->log_endpoint_trace('tiktok_rate_limited', [
+                    "username" => $username,
+                    "url" => $url,
+                    "endpoint_1" => $this->sanitize_endpoint_response($resp1),
+                    "endpoint_2" => $this->sanitize_endpoint_response($resp2)
+                ]);
+
+                return [
+                    "status" => false,
+                    "code" => "rate_limited",
+                    "retryable" => true,
+                    "msg" => "Request TikTok sedang dibatasi (Too many requests). Silakan refresh lagi dalam 1-2 menit.",
+                    "data" => []
+                ];
+            }
+
             $detail_1 = $this->format_endpoint_detail('Endpoint 1: user/info', $resp1, 'secUid');
             $detail_2 = $this->format_endpoint_detail('Endpoint 2: search/account', $resp2, 'user_info');
 
@@ -661,6 +716,15 @@ class Template
                 }
                 $response["data"] = $arr;
             } else {
+                if ($this->is_rate_limited_response($resp)) {
+                    $response["status"] = false;
+                    $response["code"] = "rate_limited";
+                    $response["retryable"] = true;
+                    $response["msg"] = "Request TikTok sedang dibatasi (Too many requests). Silakan refresh lagi dalam 1-2 menit.";
+                    $response["data"] = array();
+                    return $response;
+                }
+
                 $response["status"] = false;
                 $response["msg"] = "Data video tiktok account id :  <b>" . $account_id . "</b> tidak ditemukan";
                 $response["data"] = array();
