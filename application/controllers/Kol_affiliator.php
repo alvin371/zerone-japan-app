@@ -350,8 +350,14 @@ class Kol_affiliator extends BaseController
         $filepath = $upload_data['full_path'];
 
         try {
-            $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($filepath);
-            $rows = $spreadsheet->getActiveSheet()->toArray(null, true, true, true);
+            $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($filepath);
+            if (method_exists($reader, 'setReadDataOnly')) {
+                $reader->setReadDataOnly(true);
+            }
+
+            $spreadsheet = $reader->load($filepath);
+            $sheet = $this->resolve_import_sheet($spreadsheet);
+            $rows = $sheet->toArray(null, false, true, true);
         } catch (Exception $e) {
             @unlink($filepath);
             echo $this->template->alert_danger('File Excel tidak bisa dibaca. Pastikan format file valid.');
@@ -365,12 +371,14 @@ class Kol_affiliator extends BaseController
             return;
         }
 
-        $header_row = reset($rows);
-        $first_row_key = key($rows);
-        $header_map = [];
-        foreach ($header_row as $col => $header) {
-            $header_map[$col] = $this->normalize_excel_header($header);
+        $header_info = $this->find_excel_header_row($rows);
+        if (!$header_info) {
+            echo $this->template->alert_danger('Header tidak cocok. Pastikan kolom Username KOL tersedia.');
+            return;
         }
+
+        $header_map = $header_info['header_map'];
+        $first_row_key = $header_info['row_key'];
 
         $col_username = $this->find_excel_column($header_map, ['Username KOL', 'username_kol', 'username']);
         $col_pic = $this->find_excel_column($header_map, ['PIC Utama', 'pic_utama', 'pic']);
@@ -384,15 +392,15 @@ class Kol_affiliator extends BaseController
         $col_spesifikasi = $this->find_excel_column($header_map, ['Spesifikasi', 'spesifikasi']);
         $col_platform = $this->find_excel_column($header_map, ['Platform', 'platform']);
         $col_kategori = $this->find_excel_column($header_map, ['Kategori', 'kategori']);
-        $col_output_video = $this->find_excel_column($header_map, ['Output Video', 'output_video']);
+        $col_output_video = $this->find_excel_column($header_map, ['Output Video', 'Ouput Video', 'output_video']);
         $col_toko = $this->find_excel_column($header_map, ['Toko', 'toko']);
         $col_nama_penerima = $this->find_excel_column($header_map, ['Nama Penerima', 'nama_penerima']);
         $col_no_hp = $this->find_excel_column($header_map, ['No HP', 'no_hp']);
         $col_alamat = $this->find_excel_column($header_map, ['Alamat', 'alamat']);
         $col_actual_posting = $this->find_excel_column($header_map, ['Actual Posting', 'actual_posting']);
-        $col_tanggal_post = $this->find_excel_column($header_map, ['Tanggal Post', 'tanggal_post']);
-        $col_link_post = $this->find_excel_column($header_map, ['Link Post', 'link_post']);
-        $col_views = $this->find_excel_column($header_map, ['Views', 'views']);
+        $col_tanggal_post = $this->find_excel_column($header_map, ['Tanggal Post', 'Tanggal Post 1', 'tanggal_post', 'tanggal_post_1']);
+        $col_link_post = $this->find_excel_column($header_map, ['Link Post', 'Link 1', 'link_post', 'link_1']);
+        $col_views = $this->find_excel_column($header_map, ['Views', 'Views 1', 'views', 'views_1']);
 
         if (!$col_username) {
             echo $this->template->alert_danger('Header tidak cocok. Pastikan kolom Username KOL tersedia.');
@@ -780,6 +788,65 @@ class Kol_affiliator extends BaseController
         $data['output_video_options'] = $this->output_video_options;
         $data['toko_options'] = $this->toko_options;
         $data['platform_options'] = $this->platform_options;
+    }
+
+    private function resolve_import_sheet($spreadsheet)
+    {
+        $preferred_names = ['KOLAffiliator', 'KOL Affiliator', 'KOL & Affiliator', 'KOL_Affiliator'];
+        foreach ($preferred_names as $sheet_name) {
+            $sheet = $spreadsheet->getSheetByName($sheet_name);
+            if ($sheet) {
+                return $sheet;
+            }
+        }
+
+        foreach ($spreadsheet->getWorksheetIterator() as $worksheet) {
+            $highest_col = $worksheet->getHighestColumn();
+            $preview_rows = $worksheet->rangeToArray('A1:' . $highest_col . '20', null, false, true, true);
+            $header_info = $this->find_excel_header_row($preview_rows, 20);
+            if ($header_info) {
+                return $worksheet;
+            }
+        }
+
+        return $spreadsheet->getActiveSheet();
+    }
+
+    private function find_excel_header_row($rows, $scan_limit = 25)
+    {
+        if (!is_array($rows) || empty($rows)) {
+            return null;
+        }
+
+        $scanned = 0;
+        foreach ($rows as $row_key => $row) {
+            $scanned++;
+            if ($scanned > $scan_limit) {
+                break;
+            }
+
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $header_map = [];
+            foreach ($row as $col => $header) {
+                $header_map[$col] = $this->normalize_excel_header($header);
+            }
+
+            $col_username = $this->find_excel_column($header_map, ['Username KOL', 'username_kol', 'username']);
+            if (!$col_username) {
+                continue;
+            }
+
+            return [
+                'row_key' => $row_key,
+                'row' => $row,
+                'header_map' => $header_map
+            ];
+        }
+
+        return null;
     }
 
     private function apply_campaign_filters($builder, $keyword_category, $keyword, $status_filter, $prefix = '')
