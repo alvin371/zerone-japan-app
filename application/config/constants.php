@@ -1,6 +1,12 @@
 <?php
 defined('BASEPATH') OR exit('No direct script access allowed');
 
+// Load app env helper as early as possible so global env() comes from CI helper,
+// not from Illuminate helper that requires Dotenv classes unavailable in this runtime.
+if (file_exists(APPPATH . 'helpers/env_helper.php')) {
+	require_once APPPATH . 'helpers/env_helper.php';
+}
+
 /*
 |--------------------------------------------------------------------------
 | Display Debug backtrace
