@@ -3,6 +3,7 @@
 defined('BASEPATH') or exit('No direct script access allowed');
 
 require_once APPPATH . 'core/BaseController.php';
+require_once APPPATH . 'helpers/env_helper.php';
 require_once FCPATH . 'vendor/autoload.php';
 
 class Product extends BaseController
