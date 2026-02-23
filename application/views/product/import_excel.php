@@ -11,8 +11,15 @@
         <select class="form-control" id="brand" name="brand" required>
             <option value="">-- Pilih Brand --</option>
             <?php foreach ($brands as $brand): ?>
-                <option value="<?= $brand['code'] ?>">
-                    <?= $brand['code'] ?><?= !empty($brand['name']) ? ' - ' . $brand['name'] : '' ?>
+                <?php
+                $brandCode = trim((string)($brand['code'] ?? ($brand['opt'] ?? '')));
+                $brandName = trim((string)($brand['name'] ?? ''));
+                if ($brandCode === '') {
+                    continue;
+                }
+                ?>
+                <option value="<?= $brandCode ?>">
+                    <?= $brandCode ?><?= $brandName !== '' ? ' - ' . $brandName : '' ?>
                 </option>
             <?php endforeach; ?>
         </select>

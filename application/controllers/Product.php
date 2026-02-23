@@ -1229,9 +1229,8 @@ class Product extends BaseController
     public function import_excel()
     {
         $data['brands'] = $this->mymodel->selectWithQuery("
-            SELECT code, name
+            SELECT *
             FROM brand
-            WHERE status = 'ENABLE'
             ORDER BY name ASC
         ");
 
@@ -1248,7 +1247,7 @@ class Product extends BaseController
             return;
         }
 
-        $brand_exists = $this->db->where('code', $brand)->where('status', 'ENABLE')->get('brand')->row_array();
+        $brand_exists = $this->db->where('code', $brand)->get('brand')->row_array();
         if (empty($brand_exists)) {
             echo $this->template->alert_danger('Brand tidak valid!');
             return;
