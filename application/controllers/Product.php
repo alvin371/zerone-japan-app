@@ -3,6 +3,7 @@
 defined('BASEPATH') or exit('No direct script access allowed');
 
 require_once APPPATH . 'core/BaseController.php';
+require_once FCPATH . 'vendor/autoload.php';
 
 class Product extends BaseController
 {
@@ -13,7 +14,9 @@ class Product extends BaseController
         // AJAX methods for status updates require AJAX permission check
         $this->set_method_permissions([
             'update_status' => 'edit',
-            'update_status_bulk' => 'edit'
+            'update_status_bulk' => 'edit',
+            'import_excel' => 'create',
+            'import_excel_process' => 'create'
         ]);
     }
     public function index()
@@ -1220,6 +1223,289 @@ class Product extends BaseController
             $this->db->trans_rollback();
             echo $this->template->alert_danger('Terjadi kesalahan: ' . $e->getMessage());
         }
+    }
+
+    public function import_excel()
+    {
+        $data['brands'] = $this->mymodel->selectWithQuery("
+            SELECT code, name
+            FROM brand
+            WHERE status = 'ENABLE'
+            ORDER BY name ASC
+        ");
+
+        $this->load->view("product/import_excel", $data);
+    }
+
+    public function import_excel_process()
+    {
+        $user = $_SESSION['user'];
+        $brand = trim($this->input->post('brand'));
+
+        if (empty($brand)) {
+            echo $this->template->alert_danger('Brand wajib dipilih!');
+            return;
+        }
+
+        $brand_exists = $this->db->where('code', $brand)->where('status', 'ENABLE')->get('brand')->row_array();
+        if (empty($brand_exists)) {
+            echo $this->template->alert_danger('Brand tidak valid!');
+            return;
+        }
+
+        $upload_dir = FCPATH . 'assets/webfile/excel/';
+        if (!is_dir($upload_dir)) {
+            @mkdir($upload_dir, 0777, true);
+        }
+
+        $this->load->library('upload');
+        $config = [
+            'upload_path' => $upload_dir,
+            'allowed_types' => 'xls|xlsx',
+            'encrypt_name' => true,
+            'max_size' => 10240
+        ];
+        $this->upload->initialize($config);
+
+        if (!$this->upload->do_upload('file')) {
+            echo $this->template->alert_danger($this->upload->display_errors());
+            return;
+        }
+
+        $upload_data = $this->upload->data();
+        $filepath = $upload_data['full_path'];
+
+        try {
+            $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($filepath);
+            $rows = $spreadsheet->getActiveSheet()->toArray(null, true, true, true);
+        } catch (Exception $e) {
+            @unlink($filepath);
+            echo $this->template->alert_danger('File tidak bisa dibaca. Pastikan format file Excel valid.');
+            return;
+        }
+
+        @unlink($filepath);
+
+        if (empty($rows) || count($rows) < 2) {
+            echo $this->template->alert_danger('File Excel kosong atau tidak memiliki data.');
+            return;
+        }
+
+        $header_row = reset($rows);
+        $first_row_key = key($rows);
+        $header_map = [];
+
+        foreach ($header_row as $col => $header) {
+            $header_map[$col] = $this->normalize_excel_header($header);
+        }
+
+        $col_sku = $this->find_excel_column($header_map, ['ITEM CODE', 'SKU', 'KODE ITEM']);
+        $col_name = $this->find_excel_column($header_map, ['PRODUK/SKU', 'NAMA PRODUK', 'PRODUCT', 'PRODUK']);
+        $col_volume = $this->find_excel_column($header_map, ['VOLUME (ml)', 'VOLUME']);
+        $col_price_normal = $this->find_excel_column($header_map, ['Harga Jual', 'HARGA JUAL']);
+        $col_price_buy = $this->find_excel_column($header_map, ['COGS', 'HPP', 'Harga Beli']);
+        $col_weight = $this->find_excel_column($header_map, ['Berat (gram)', 'Berat (gr)', 'BERAT']);
+
+        if (!$col_sku || !$col_name) {
+            echo $this->template->alert_danger('Header tidak cocok. Pastikan kolom ITEM CODE dan PRODUK/SKU tersedia.');
+            return;
+        }
+
+        $inserted = 0;
+        $updated = 0;
+        $skipped = 0;
+        $error_rows = [];
+        $now = date("Y-m-d H:i:s");
+
+        foreach ($rows as $row_number => $row) {
+            if ($row_number == $first_row_key) {
+                continue;
+            }
+
+            $sku = trim((string)($row[$col_sku] ?? ''));
+            $name = trim((string)($row[$col_name] ?? ''));
+
+            if ($sku === '' && $name === '') {
+                continue;
+            }
+
+            if ($sku === '' || $name === '') {
+                $skipped++;
+                $error_rows[] = "Baris {$row_number}: ITEM CODE / PRODUK/SKU kosong.";
+                continue;
+            }
+
+            $price_normal = $col_price_normal ? $this->parse_localized_number($row[$col_price_normal] ?? 0) : 0;
+            $price_buy = $col_price_buy ? $this->parse_localized_number($row[$col_price_buy] ?? 0) : 0;
+            $volume = $col_volume ? $this->parse_localized_number($row[$col_volume] ?? 0) : 0;
+            $weight = $col_weight ? $this->parse_localized_number($row[$col_weight] ?? 0) : 0;
+
+            if ($weight <= 0 && $volume > 0) {
+                $weight = $volume;
+            }
+
+            $weight = max(0, (int)round($weight));
+            $price_normal = max(0, $price_normal);
+            $price_buy = max(0, $price_buy);
+
+            $existing = $this->db
+                ->where('sku', $sku)
+                ->where('(parent_id = 0 OR parent_id IS NULL)', null, false)
+                ->limit(1)
+                ->get('product')
+                ->row_array();
+
+            if ($existing) {
+                $dt_update = [
+                    'name' => $name,
+                    'sub_name' => strtoupper($name),
+                    'sku' => $sku,
+                    'weight' => $weight,
+                    'price_buy' => $price_buy,
+                    'price_normal' => $price_normal,
+                    'status' => 'Aktif',
+                    'updated_at' => $now,
+                    'updated_by' => $user['id']
+                ];
+
+                if (empty($existing['brand'])) {
+                    $dt_update['brand'] = $brand;
+                    $dt_update['brand_text'] = $brand;
+                }
+
+                $ok = $this->db->where('id', $existing['id'])->update('product', $dt_update);
+                if ($ok) {
+                    $updated++;
+                } else {
+                    $skipped++;
+                    $error_rows[] = "Baris {$row_number}: gagal update SKU {$sku}.";
+                }
+            } else {
+                $dt_insert = [
+                    'parent_id' => 0,
+                    'brand' => $brand,
+                    'brand_text' => $brand,
+                    'sku' => $sku,
+                    'name' => $name,
+                    'sub_name' => strtoupper($name),
+                    'price_buy' => $price_buy,
+                    'price_normal' => $price_normal,
+                    'price_reseller' => $price_normal,
+                    'price_distributor' => $price_normal,
+                    'weight' => $weight,
+                    'is_gift' => 0,
+                    'is_operational' => 0,
+                    'is_varian' => 0,
+                    'created_at' => $now,
+                    'created_by' => $user['id'],
+                    'status' => 'Aktif'
+                ];
+
+                $ok = $this->db->insert('product', $dt_insert);
+                if ($ok) {
+                    $inserted++;
+                } else {
+                    $skipped++;
+                    $error_rows[] = "Baris {$row_number}: gagal insert SKU {$sku}.";
+                }
+            }
+        }
+
+        if (($inserted + $updated) === 0 && $skipped > 0) {
+            $msg = 'Import gagal. Tidak ada data yang diproses.';
+            if (!empty($error_rows)) {
+                $msg .= ' ' . implode(' ', array_slice($error_rows, 0, 3));
+            }
+            echo $this->template->alert_danger($msg);
+            return;
+        }
+
+        $msg = "Import berhasil! {$inserted} data ditambahkan, {$updated} data diperbarui, {$skipped} data dilewati.";
+        if (!empty($error_rows)) {
+            $msg .= ' Catatan: ' . implode(' ', array_slice($error_rows, 0, 3));
+        }
+        echo $this->template->alert_success($msg);
+    }
+
+    private function normalize_excel_header($header)
+    {
+        $header = trim((string)$header);
+        $header = str_replace("\xc2\xa0", ' ', $header);
+        $header = preg_replace('/\s+/', ' ', $header);
+        return strtolower(trim($header));
+    }
+
+    private function find_excel_column($header_map, $aliases)
+    {
+        foreach ($aliases as $alias) {
+            $normalized_alias = $this->normalize_excel_header($alias);
+            foreach ($header_map as $col => $normalized_header) {
+                if ($normalized_header === $normalized_alias) {
+                    return $col;
+                }
+            }
+        }
+        return null;
+    }
+
+    private function parse_localized_number($raw)
+    {
+        if ($raw === null || $raw === '') {
+            return 0;
+        }
+
+        if (is_numeric($raw)) {
+            return (float)$raw;
+        }
+
+        $value = (string)$raw;
+        $value = str_replace(["\xc2\xa0", 'Rp', 'rp', 'IDR', 'idr', ' '], '', $value);
+        $value = preg_replace('/[^0-9,\.\-]/', '', $value);
+
+        if ($value === '' || $value === '-' || $value === ',' || $value === '.') {
+            return 0;
+        }
+
+        $last_comma = strrpos($value, ',');
+        $last_dot = strrpos($value, '.');
+
+        if ($last_comma !== false && $last_dot !== false) {
+            if ($last_comma > $last_dot) {
+                $value = str_replace('.', '', $value);
+                $value = str_replace(',', '.', $value);
+            } else {
+                $value = str_replace(',', '', $value);
+            }
+        } elseif ($last_comma !== false) {
+            $parts = explode(',', $value);
+            if (count($parts) > 2) {
+                $value = str_replace(',', '', $value);
+            } else {
+                $decimals = strlen($parts[1]);
+                if ($decimals === 3 && strlen($parts[0]) > 0) {
+                    $value = str_replace(',', '', $value);
+                } else {
+                    $value = str_replace(',', '.', $value);
+                }
+            }
+        } elseif ($last_dot !== false) {
+            $parts = explode('.', $value);
+            if (count($parts) > 2) {
+                $last_part = array_pop($parts);
+                if (strlen($last_part) === 3) {
+                    $value = implode('', $parts) . $last_part;
+                } else {
+                    $value = implode('', $parts) . '.' . $last_part;
+                }
+            } else {
+                $decimals = strlen($parts[1]);
+                if ($decimals === 3) {
+                    $value = str_replace('.', '', $value);
+                }
+            }
+        }
+
+        return is_numeric($value) ? (float)$value : 0;
     }
 
     public function get_price_by_id()
