@@ -240,6 +240,11 @@
                 <h5 class="mb-0" style="color: rgba(0, 0, 0, 0.85);">Product Management</h5>
                 <?php if (in_array($user['role'], array('1', '2', '3', '6'))) { ?>
                     <div class="d-flex gap-2">
+                        <?php if (isset($_GET['status']) && $_GET['status'] == 'active') { ?>
+                            <a href="#!" onclick="importExcel()" class="btn btn-outline-secondary">
+                                <i class="bi bi-file-earmark-excel me-1"></i> Import Excel
+                            </a>
+                        <?php } ?>
                         <a href="#!" onclick="sync_data('<?= $start_date ?>','<?= $until_date ?>')" class="btn btn-outline-secondary">
                             <i class="bi bi-cloud-download me-1"></i> Sync Data
                         </a>
@@ -416,6 +421,14 @@
     </div>
 </div>
 <script>
+    function importExcel() {
+        $("#load-form").html('Loading...');
+        $("#modal-form").modal('show');
+        $("#modal-dialog").removeClass("modal-xl").addClass("modal-lg");
+        $("#title-form").html('Import Excel Produk');
+        $("#load-form").load("<?= base_url() ?>/product/import_excel");
+    }
+
     function create() {
         $("#load-form").html('Loading...');
         $("#modal-form").modal('show');

@@ -50,10 +50,10 @@ foreach ($data as $v) {
                 <?php if (!$v['is_varian']): ?>
                     <div style="font-size: 14px;">
                         <?php if (in_array($user['role'], array('1', '3'))) { ?>
-                            <div class="text-muted mb-1" style="font-size: 12px;">HPP: <?= $template->separator_only($v['price_buy']) ?></div>
+                            <div class="text-muted mb-1" style="font-size: 12px;">HPP: Rp <?= $template->separator($v['price_buy']) ?></div>
                         <?php } ?>
                         <div>
-                            <strong><?= $template->separator_only($v['price_normal']) ?></strong>
+                            <strong>Rp <?= $template->separator_only($v['price_normal']) ?></strong>
                             <i class="bi bi-eye ms-1" id="eye-<?= $v['id'] ?>" style="color: #1890ff; cursor: pointer;"></i>
                         </div>
                     </div>
@@ -147,10 +147,10 @@ foreach ($data as $v) {
                     <td class="text-start" style="width: 150px;">
                         <div style="font-size: 14px;">
                             <?php if (in_array($user['role'], array('1', '3'))) { ?>
-                                <div class="text-muted mb-1" style="font-size: 12px;">HPP: <?= $template->separator_only($variant['price_buy']) ?></div>
+                                <div class="text-muted mb-1" style="font-size: 12px;">HPP: Rp <?= $template->separator($variant['price_buy']) ?></div>
                             <?php } ?>
                             <div>
-                                <strong><?= $template->separator_only($variant['price_normal']) ?></strong>
+                                <strong>Rp <?= $template->separator_only($variant['price_normal']) ?></strong>
                                 <i class="bi bi-eye ms-1" id="eye-<?= $variant['id'] ?>" style="color: #1890ff; cursor: pointer;"></i>
                             </div>
                         </div>
