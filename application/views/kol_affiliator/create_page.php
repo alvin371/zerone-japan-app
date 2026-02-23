@@ -42,7 +42,8 @@
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">PIC Utama</label>
-                        <input type="text" class="form-control" name="dt[pic_utama]" value="<?= htmlspecialchars($data['pic_utama'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                        <input type="hidden" id="pic-utama-value" name="dt[pic_utama]" value="<?= htmlspecialchars($data['pic_utama'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                        <select id="pic-utama-select" class="form-select"></select>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">Creator</label>
@@ -51,7 +52,8 @@
 
                     <div class="col-md-6">
                         <label class="form-label">Product</label>
-                        <input type="text" class="form-control" name="dt[product]" value="<?= htmlspecialchars($data['product'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                        <input type="hidden" id="product-value" name="dt[product]" value="<?= htmlspecialchars($data['product'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                        <select id="product-select" class="form-select"></select>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">Status Creator</label>
@@ -155,6 +157,110 @@
 <script>
     let postIndex = 0;
 
+    function initPicUtamaSelect() {
+        const $select = $('#pic-utama-select');
+        const $hidden = $('#pic-utama-value');
+        const initialValue = ($hidden.val() || '').trim();
+
+        if (initialValue !== '') {
+            $select.append(new Option(initialValue, initialValue, true, true));
+        }
+
+        $select.select2({
+            width: '100%',
+            allowClear: true,
+            placeholder: 'Pilih PIC utama...',
+            minimumInputLength: 0,
+            ajax: {
+                url: "<?= base_url('kol-affiliator/search-users') ?>",
+                dataType: 'json',
+                delay: 200,
+                data: function(params) {
+                    return {
+                        q: params.term || '',
+                        page: params.page || 1
+                    };
+                },
+                processResults: function(data) {
+                    return {
+                        results: data.results || [],
+                        pagination: (data.pagination || {
+                            more: false
+                        })
+                    };
+                }
+            },
+            language: {
+                noResults: function() {
+                    return 'User tidak ditemukan';
+                }
+            }
+        });
+
+        $select.on('select2:select', function(e) {
+            const item = e.params && e.params.data ? e.params.data : {};
+            $hidden.val(item.full_name || item.text || '');
+        });
+
+        $select.on('change', function() {
+            if (!$select.val()) {
+                $hidden.val('');
+            }
+        });
+    }
+
+    function initProductSelect() {
+        const $select = $('#product-select');
+        const $hidden = $('#product-value');
+        const initialValue = ($hidden.val() || '').trim();
+
+        if (initialValue !== '') {
+            $select.append(new Option(initialValue, initialValue, true, true));
+        }
+
+        $select.select2({
+            width: '100%',
+            allowClear: true,
+            placeholder: 'Cari product...',
+            minimumInputLength: 0,
+            ajax: {
+                url: "<?= base_url('kol-affiliator/search-products') ?>",
+                dataType: 'json',
+                delay: 200,
+                data: function(params) {
+                    return {
+                        q: params.term || '',
+                        page: params.page || 1
+                    };
+                },
+                processResults: function(data) {
+                    return {
+                        results: data.results || [],
+                        pagination: (data.pagination || {
+                            more: false
+                        })
+                    };
+                }
+            },
+            language: {
+                noResults: function() {
+                    return 'Produk tidak ditemukan';
+                }
+            }
+        });
+
+        $select.on('select2:select', function(e) {
+            const item = e.params && e.params.data ? e.params.data : {};
+            $hidden.val(item.name || item.text || '');
+        });
+
+        $select.on('change', function() {
+            if (!$select.val()) {
+                $hidden.val('');
+            }
+        });
+    }
+
     function addPostRow(item = {}) {
         const rowId = 'post-row-' + postIndex;
         const postId = item.id ? parseInt(item.id, 10) : 0;
@@ -225,6 +331,8 @@
     });
 
     $(document).ready(function() {
+        initPicUtamaSelect();
+        initProductSelect();
         addPostRow();
     });
 </script>
