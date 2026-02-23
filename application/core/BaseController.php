@@ -29,6 +29,7 @@ class BaseController extends CI_Controller
         'calendar' => 'calendar',
         'payment' => 'payment',
         'codeboost' => 'codeboost',
+        'kol_affiliator' => 'kol_affiliator',
         'marketplace_account' => 'marketplace_account',
         'transaction' => 'transaction',
         'transaction_item' => 'transaction_item',

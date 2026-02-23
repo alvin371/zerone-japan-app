@@ -40,6 +40,7 @@
     $("#form-modal").submit(function() {
         var form = $(this);
         var mydata = new FormData(this);
+        var isSuccess = false;
 
         $.ajax({
             type: "POST",
@@ -58,18 +59,31 @@
             success: function(response) {
                 var str = response || '';
                 $(".form-message").hide().html(response).slideDown("fast");
+                isSuccess =
+                    str.toLowerCase().indexOf('script success') !== -1 ||
+                    str.toLowerCase().indexOf('icon: "success"') !== -1 ||
+                    str.toLowerCase().indexOf('alert-success') !== -1 ||
+                    str.toLowerCase().indexOf('success') !== -1;
 
-                if (str.indexOf("success") !== -1) {
-                    setTimeout(function() {
-                        window.location.href = window.location.href;
-                    }, 1500);
-                } else {
-                    $(".btn-send").removeClass("disabled").html('Import Data').attr('disabled', false);
+                if (!isSuccess) {
+                    return;
                 }
+
+                setTimeout(function() {
+                    $(".btn-send").removeClass("disabled").html('Import Data').attr('disabled', false);
+                    $("#modal-form").modal('hide');
+                    $("#load-form").html('');
+                    window.location.reload();
+                }, 900);
             },
             error: function(xhr) {
                 $(".btn-send").removeClass("disabled").html('Import Data').attr('disabled', false);
                 $(".form-message").hide().html(xhr.responseText || 'Terjadi kesalahan').slideDown("fast");
+            },
+            complete: function() {
+                if (!isSuccess) {
+                    $(".btn-send").removeClass("disabled").html('Import Data').attr('disabled', false);
+                }
             }
         });
 
