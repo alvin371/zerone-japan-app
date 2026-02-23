@@ -448,6 +448,7 @@ class Roles extends BaseController
                 'ads_lazada',
                 'influencer',
                 'influencer_dummy',
+                'kol_affiliator',
                 'endorse_campaign',
                 'calendar',
                 'payment',
@@ -597,6 +598,7 @@ class Roles extends BaseController
             // Influencer management
             'influencer' => ['view', 'create', 'edit', 'delete'],
             'influencer_dummy' => ['view', 'create', 'edit', 'delete'],
+            'kol_affiliator' => ['view', 'create', 'edit', 'delete'],
 
             // Endorsement management
             'endorse' => ['view', 'create', 'edit', 'delete'],
@@ -705,7 +707,7 @@ class Roles extends BaseController
 
             'Marketing' => array(
                 'marketing', 'overview',
-                'influencer', 'influencer_dummy',
+                'influencer', 'influencer_dummy', 'kol_affiliator',
                 'endorse', 'endorse_campaign', 'review_endorse',
                 'payment', 'calendar',
                 'ads', 'ads_tiktok', 'ads_meta', 'ads_shopee', 'ads_lazada',

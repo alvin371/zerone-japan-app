@@ -550,7 +550,7 @@ if (!$_SESSION['is_login']) {
     <?php
     $menu_marketing = $menu_overview = $menu_overview_ads = $menu_overview_kol = $menu_overview_influencer = '';
     $menu_ads = $menu_ads_tiktok = $menu_ads_meta = $menu_ads_shopee = $menu_ads_lazada = '';
-    $menu_endorsement = $menu_influencer = $menu_influencer_dummy = $menu_calendar = $menu_payment_fee = $menu_codeboost = '';
+    $menu_endorsement = $menu_influencer = $menu_influencer_dummy = $menu_kol_affiliator = $menu_endorse_campaign = $menu_calendar = $menu_payment_fee = $menu_codeboost = '';
     $menu_order_customer = $menu_toko = $menu_order_item = $menu_crm_mg = $menu_crm_pome = $menu_grup_wa = '';
     $menu_operasional = $menu_stock = $menu_product = $menu_product_3rd = $menu_discount = $menu_marketplace = $menu_shipping = '';
     $menu_hr_management = $menu_quest_level = $menu_position = $menu_benefit = $menu_quest = $menu_milestone = $menu_recruitment = $menu_roles = '';
@@ -573,6 +573,7 @@ if (!$_SESSION['is_login']) {
                          $CI->permission->check_permission($user_id, 'ads_lazada', 'view') ||
                          $CI->permission->check_permission($user_id, 'influencer', 'view') ||
                          $CI->permission->check_permission($user_id, 'influencer_dummy', 'view') ||
+                         $CI->permission->check_permission($user_id, 'kol_affiliator', 'view') ||
                          $CI->permission->check_permission($user_id, 'endorse_campaign', 'view') ||
                          $CI->permission->check_permission($user_id, 'calendar', 'view') ||
                          $CI->permission->check_permission($user_id, 'payment', 'view') ||
@@ -586,6 +587,7 @@ if (!$_SESSION['is_login']) {
                           $CI->permission->check_permission($user_id, 'ads_lazada', 'view');
     $can_view_endorsement = $CI->permission->check_permission($user_id, 'influencer', 'view') ||
                            $CI->permission->check_permission($user_id, 'influencer_dummy', 'view') ||
+                           $CI->permission->check_permission($user_id, 'kol_affiliator', 'view') ||
                            $CI->permission->check_permission($user_id, 'endorse_campaign', 'view') ||
                            $CI->permission->check_permission($user_id, 'calendar', 'view') ||
                            $CI->permission->check_permission($user_id, 'payment', 'view') ||
@@ -632,6 +634,7 @@ if (!$_SESSION['is_login']) {
         'ads_lazada' => $CI->permission->check_permission($user_id, 'ads_lazada', 'view'),
         'influencer' => $CI->permission->check_permission($user_id, 'influencer', 'view'),
         'influencer_dummy' => $CI->permission->check_permission($user_id, 'influencer_dummy', 'view'),
+        'kol_affiliator' => $CI->permission->check_permission($user_id, 'kol_affiliator', 'view'),
         'endorse_campaign' => $CI->permission->check_permission($user_id, 'endorse_campaign', 'view'),
         'calendar' => $CI->permission->check_permission($user_id, 'calendar', 'view'),
         'payment' => $CI->permission->check_permission($user_id, 'payment', 'view'),
@@ -730,6 +733,10 @@ if (!$_SESSION['is_login']) {
       $menu_marketing = 'show';
       $menu_endorsement = 'show';
       $menu_influencer_dummy = 'active';
+    } else if ($uri_1 == 'kol-affiliator' || $uri_1 == 'kol_affiliator') {
+      $menu_marketing = 'show';
+      $menu_endorsement = 'show';
+      $menu_kol_affiliator = 'active';
     } else if ($uri_1 == 'payment' || $uri_1 == 'review-endorse') {
       $menu_marketing = 'show';
       $menu_endorsement = 'show';
@@ -795,7 +802,7 @@ if (!$_SESSION['is_login']) {
     } else {
       $menu_marketing = $menu_overview = '';
       $menu_ads = $menu_ads_tiktok = $menu_ads_meta = $menu_ads_shopee = $menu_ads_lazada = '';
-      $menu_endorsement = $menu_influencer = $menu_influencer_dummy = $menu_calendar = $menu_payment_fee = $menu_codeboost = '';
+      $menu_endorsement = $menu_influencer = $menu_influencer_dummy = $menu_kol_affiliator = $menu_endorse_campaign = $menu_calendar = $menu_payment_fee = $menu_codeboost = '';
       $menu_order_customer = $menu_toko = $menu_order_item = $menu_crm_mg = $menu_crm_pome = $menu_grup_wa = '';
       $menu_operasional = $menu_stock = $menu_product = '';
       $menu_hr_management = $menu_quest_level = $menu_position = $menu_benefit = $menu_quest = $menu_milestone = $menu_recruitment = $menu_roles = '';
@@ -912,6 +919,12 @@ if (!$_SESSION['is_login']) {
                   <a href="<?= base_url() ?>influencer-dummy" class="ms-3 item-menu <?= $menu_influencer_dummy ?>">
                     <i class="icon bi bi-person-lines-fill"></i>
                     INFLUENCER LISTING
+                  </a>
+                <?php endif; ?>
+                <?php if ($modules_permissions['kol_affiliator']): ?>
+                  <a href="<?= base_url() ?>kol-affiliator" class="ms-3 item-menu <?= $menu_kol_affiliator ?>">
+                    <i class="icon bi bi-people-fill"></i>
+                    KOL & AFFILIATOR
                   </a>
                 <?php endif; ?>
                 <?php if ($modules_permissions['endorse_campaign']): ?>
