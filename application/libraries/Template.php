@@ -889,82 +889,65 @@ class Template
                 $response["data"]["created_at"] = date("Y-m-d", intval($itemStruct['createTime']));
             }
         } else if ($type == "Instagram") {
-            $response["status"] = false;
-            $response["msg"] = "Layanan belum tersedia";
-            $response["data"] = array();
+            $defaultData = array(
+                'like' => 0,
+                'share' => 0,
+                'comment' => 0,
+                'collect' => 0,
+                'view' => 0,
+                'created_at' => '',
+            );
 
-            // if ($url) {
+            if (!$url) {
+                $response["status"] = false;
+                $response["msg"] = "URL tidak ditemukan";
+                $response["data"] = $defaultData;
+                return $response;
+            }
 
-            //     $curl = curl_init();
-            //     $code = end(explode("reel/", $url));
-            //     if ($code == $url) {
-            //         $code = end(explode("p/", $url));
-            //     }
-            //     $code = explode('/', $code)[0];
+            $CI =& get_instance();
+            $CI->load->library('scrapingbot');
 
-            //     curl_setopt_array($curl, array(
-            //         CURLOPT_URL => 'https://api.instagapi.com/postdetail/' . $code,
-            //         CURLOPT_RETURNTRANSFER => true,
-            //         CURLOPT_ENCODING => '',
-            //         CURLOPT_MAXREDIRS => 10,
-            //         CURLOPT_TIMEOUT => 0,
-            //         CURLOPT_FOLLOWLOCATION => true,
-            //         CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-            //         CURLOPT_CUSTOMREQUEST => 'GET',
-            //         CURLOPT_HTTPHEADER => array(
-            //             'X-InstagAPI-Key: 0aaf6108af3c2962ff24720ffe09748b',
-            //             'Cookie: PHPSESSID=3f6obv20o5p0jbo2j4i94dml0k'
-            //         ),
-            //     ));
+            $start = $CI->scrapingbot->scrapeInstagramPost($url);
+            if (empty($start['status']) || empty($start['responseId'])) {
+                $response["status"] = false;
+                $response["msg"] = $start['msg'] ?? "Gagal submit scraping Instagram";
+                $response["data"] = $defaultData;
+                return $response;
+            }
 
-            //     $response_2 = curl_exec($curl);
+            $maxAttempts = 12;
+            $pollResult = null;
+            for ($i = 0; $i < $maxAttempts; $i++) {
+                $pollResult = $CI->scrapingbot->pollResult('instagramPost', $start['responseId']);
+                if (($pollResult['status'] ?? '') === 'success') {
+                    break;
+                }
+                if (($pollResult['status'] ?? '') === 'error') {
+                    $response["status"] = false;
+                    $response["msg"] = $pollResult['msg'] ?? "Scraping Instagram gagal";
+                    $response["data"] = $defaultData;
+                    return $response;
+                }
+                usleep(1500000);
+            }
 
-            //     curl_close($curl);
-            //     $json = json_decode($response_2, true);
-            //     $jsonData = $json['data'];
-            //     if ($jsonData) {
-            //         $response["status"] = true;
-            //         $response["msg"] = "";
-            //         // $response["data"]["like"] = intval($jsonData['like_count']);
-            //         // $response["data"]["share"] = intval($jsonData['stats']['shareCount']);
-            //         // $response["data"]["comment"] = intval($jsonData['comment_count']);
-            //         // $response["data"]["collect"] = intval($jsonData['stats']['collectCount']);
-            //         // $response["data"]["view"] = intval($jsonData['play_count']);
-            //         curl_setopt_array($curl, array(
-            //             CURLOPT_URL => 'https://api.instagapi.com/postlikes/' . $code . '/1/',
-            //             CURLOPT_RETURNTRANSFER => true,
-            //             CURLOPT_ENCODING => '',
-            //             CURLOPT_MAXREDIRS => 10,
-            //             CURLOPT_TIMEOUT => 0,
-            //             CURLOPT_FOLLOWLOCATION => true,
-            //             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-            //             CURLOPT_CUSTOMREQUEST => 'GET',
-            //             CURLOPT_HTTPHEADER => array(
-            //                 'X-InstagAPI-Key: 0aaf6108af3c2962ff24720ffe09748b',
-            //                 'Cookie: PHPSESSID=3f6obv20o5p0jbo2j4i94dml0k'
-            //             ),
-            //         ));
+            if (($pollResult['status'] ?? '') !== 'success') {
+                $response["status"] = false;
+                $response["msg"] = "Timeout menunggu hasil scraping Instagram";
+                $response["data"] = $defaultData;
+                return $response;
+            }
 
-            //         $response_2 = curl_exec($curl);
-            //         $jsonData2 = json_decode($response_2, true);
-            //         $jsonData2 = $jsonData2['data'];
-
-            //         $response["data"]["like"] = intval($jsonData2['count']);
-            //         $response["data"]["share"] = intval($jsonData['shareCount']);
-            //         $response["data"]["comment"] = intval($jsonData['edge_media_to_parent_comment']['count']);
-            //         $response["data"]["collect"] = intval($jsonData['collectCount']);
-            //         $response["data"]["view"] = intval($jsonData['video_play_count']);
-            //         $response['data']['created_at'] = DATE("Y-m-d", $jsonData['taken_at']);
-            //     } else {
-            //         $response["status"] = false;
-            //         $response["msg"] = "Response instagram tidak ditemukan";
-            //         $response["data"] = array();
-            //     }
-            // } else {
-            //     $response["status"] = false;
-            //     $response["msg"] = "URL tidak ditemukan";
-            //     $response["data"] = array();
-            // }
+            $parsed = $this->parseInstagramPostResponse($pollResult['data'] ?? array());
+            $response["status"] = true;
+            $response["msg"] = "";
+            $response["data"]["like"] = intval($parsed['like'] ?? 0);
+            $response["data"]["share"] = intval($parsed['share'] ?? 0);
+            $response["data"]["comment"] = intval($parsed['comment'] ?? 0);
+            $response["data"]["collect"] = intval($parsed['collect'] ?? 0);
+            $response["data"]["view"] = intval($parsed['view'] ?? 0);
+            $response["data"]["created_at"] = strval($parsed['created_at'] ?? '');
         } else if ($type == "Threads") {
             $defaultData = array(
                 'like' => 0,
@@ -1332,6 +1315,57 @@ class Template
             'comment' => $this->normalizeMetricNumber($item['comment_count'] ?? ($item['reply_count'] ?? ($item['comments'] ?? ($stats['comment_count'] ?? ($stats['reply_count'] ?? 0))))),
             'collect' => $this->normalizeMetricNumber($item['save_count'] ?? ($item['bookmark_count'] ?? ($stats['save_count'] ?? ($stats['bookmark_count'] ?? 0)))),
             'view' => $this->normalizeMetricNumber($item['view_count'] ?? ($item['views'] ?? ($item['play_count'] ?? ($stats['view_count'] ?? ($stats['views'] ?? 0))))),
+            'created_at' => $createdAt,
+        ];
+    }
+
+    function parseInstagramPostResponse($data)
+    {
+        $item = $data;
+        if (isset($data[0]) && is_array($data[0])) {
+            $item = $data[0];
+            foreach ($data as $candidate) {
+                if (!is_array($candidate)) {
+                    continue;
+                }
+                if (($candidate['type'] ?? '') === 'profile') {
+                    continue;
+                }
+                $item = $candidate;
+                break;
+            }
+        }
+
+        if (isset($item['post']) && is_array($item['post'])) {
+            $item = $item['post'];
+        } else if (isset($item['media']) && is_array($item['media'])) {
+            $item = $item['media'];
+        } else if (isset($item['node']) && is_array($item['node'])) {
+            $item = $item['node'];
+        }
+
+        $stats = $item['stats'] ?? ($item['statistics'] ?? ($item['engagement'] ?? []));
+
+        $createdAt = $item['created_at'] ?? ($item['timestamp'] ?? ($item['date'] ?? ($item['taken_at'] ?? '')));
+        if (is_numeric($createdAt)) {
+            $ts = intval($createdAt);
+            if ($ts > 9999999999) {
+                $ts = intval($ts / 1000);
+            }
+            $createdAt = $ts > 0 ? date('Y-m-d', $ts) : '';
+        } else if (is_string($createdAt) && trim($createdAt) !== '') {
+            $ts = strtotime($createdAt);
+            $createdAt = $ts ? date('Y-m-d', $ts) : '';
+        } else {
+            $createdAt = '';
+        }
+
+        return [
+            'like' => $this->normalizeMetricNumber($item['like_count'] ?? ($item['likes'] ?? ($stats['like_count'] ?? ($stats['likes'] ?? 0)))),
+            'share' => $this->normalizeMetricNumber($item['share_count'] ?? ($item['shares'] ?? ($stats['share_count'] ?? ($stats['shares'] ?? 0)))),
+            'comment' => $this->normalizeMetricNumber($item['comment_count'] ?? ($item['comments'] ?? ($stats['comment_count'] ?? ($stats['comments'] ?? 0)))),
+            'collect' => $this->normalizeMetricNumber($item['save_count'] ?? ($item['bookmark_count'] ?? ($stats['save_count'] ?? ($stats['bookmark_count'] ?? 0)))),
+            'view' => $this->normalizeMetricNumber($item['video_view_count'] ?? ($item['view_count'] ?? ($item['views'] ?? ($item['play_count'] ?? ($stats['view_count'] ?? ($stats['views'] ?? 0)))))),
             'created_at' => $createdAt,
         ];
     }

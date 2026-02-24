@@ -1839,22 +1839,38 @@ class Endorse extends BaseController
 
         if ($dt['link_upload']) {
             $dt['status_endorse'] = 'Posted Content';
+            $platform = strtolower(trim((string)($dt['platform'] ?? '')));
+            if ($platform === 'tiktok') {
+                $usernameFromUrl = $this->extract_tiktok_username($dt['link_upload']);
+                if ($usernameFromUrl === '') {
+                    $msg = "Link upload tidak valid atau tidak dapat mengambil username TikTok.";
+                    echo $this->template->alert_danger($msg);
+                    die;
+                }
 
-            $usernameFromUrl = $this->extract_tiktok_username($dt['link_upload']);
-            if ($usernameFromUrl === '') {
-                $msg = "Link upload tidak valid atau tidak dapat mengambil username TikTok.";
-                echo $this->template->alert_danger($msg);
-                die;
-            }
-
-            $influencerData = $this->find_influencer_by_username($usernameFromUrl);
-            if (!empty($influencerData)) {
-                $dt['influencer'] = $influencerData['id'];
-                $dt['nama_creator'] = $influencerData['username'];
+                $influencerData = $this->find_influencer_by_username($usernameFromUrl);
+                if (!empty($influencerData)) {
+                    $dt['influencer'] = $influencerData['id'];
+                    $dt['nama_creator'] = $influencerData['username'];
+                } else {
+                    $msg = "Username '$usernameFromUrl' tidak ditemukan di database influencer.";
+                    echo $this->template->alert_danger($msg);
+                    die;
+                }
             } else {
-                $msg = "Username '$usernameFromUrl' tidak ditemukan di database influencer.";
-                echo $this->template->alert_danger($msg);
-                die;
+                // Non-TikTok upload should follow selected creator on form.
+                $id_data = $dt['influencer'] ?? '';
+                $detail = array();
+                if ($id_data !== '') {
+                    $detail = $this->mymodel->selectDataOne('influencer', array('id' => $id_data));
+                }
+                if (!empty($detail)) {
+                    $dt['nama_creator'] = strval($detail['username']);
+                } else {
+                    $msg = "Creator tidak ditemukan. Pastikan Nama Creator sudah dipilih.";
+                    echo $this->template->alert_danger($msg);
+                    die;
+                }
             }
         } else {
             $id_data = $dt['influencer'];
@@ -2258,22 +2274,38 @@ class Endorse extends BaseController
 
         if ($dt['link_upload']) {
             $dt['status_endorse'] = 'Posted Content';
+            $platform = strtolower(trim((string)($dt['platform'] ?? '')));
+            if ($platform === 'tiktok') {
+                $usernameFromUrl = $this->extract_tiktok_username($dt['link_upload']);
+                if ($usernameFromUrl === '') {
+                    $msg = "Link upload tidak valid atau tidak dapat mengambil username TikTok.";
+                    echo $this->template->alert_danger($msg);
+                    die;
+                }
 
-            $usernameFromUrl = $this->extract_tiktok_username($dt['link_upload']);
-            if ($usernameFromUrl === '') {
-                $msg = "Link upload tidak valid atau tidak dapat mengambil username TikTok.";
-                echo $this->template->alert_danger($msg);
-                die;
-            }
-
-            $influencerData = $this->find_influencer_by_username($usernameFromUrl);
-            if (!empty($influencerData)) {
-                $dt['influencer'] = $influencerData['id'];
-                $dt['nama_creator'] = $influencerData['username'];
+                $influencerData = $this->find_influencer_by_username($usernameFromUrl);
+                if (!empty($influencerData)) {
+                    $dt['influencer'] = $influencerData['id'];
+                    $dt['nama_creator'] = $influencerData['username'];
+                } else {
+                    $msg = "Username '$usernameFromUrl' tidak ditemukan di database influencer.";
+                    echo $this->template->alert_danger($msg);
+                    die;
+                }
             } else {
-                $msg = "Username '$usernameFromUrl' tidak ditemukan di database influencer.";
-                echo $this->template->alert_danger($msg);
-                die;
+                // Non-TikTok upload should follow selected creator on form.
+                $id_data = $dt['influencer'] ?? '';
+                $detail = array();
+                if ($id_data !== '') {
+                    $detail = $this->mymodel->selectDataOne('influencer', array('id' => $id_data));
+                }
+                if (!empty($detail)) {
+                    $dt['nama_creator'] = strval($detail['username']);
+                } else {
+                    $msg = "Creator tidak ditemukan. Pastikan Nama Creator sudah dipilih.";
+                    echo $this->template->alert_danger($msg);
+                    die;
+                }
             }
         } else {
             $id_data = $dt['influencer'];
@@ -3163,36 +3195,85 @@ class Endorse extends BaseController
         }
 
         $raw = html_entity_decode($raw, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        $decoded = urldecode($raw);
+        $decoded = trim(urldecode($raw));
 
-        // Handle direct input like "username" or "@username"
-        if (preg_match('/^@?([A-Za-z0-9._]{2,32})$/', $decoded, $m)) {
-            return strtolower($m[1]);
+        $direct = $this->normalize_tiktok_username_candidate($decoded);
+        if ($direct !== '') {
+            return $direct;
         }
 
-        $candidateUrl = $decoded;
-        if (!preg_match('#^[a-z][a-z0-9+.-]*://#i', $candidateUrl) && stripos($candidateUrl, 'tiktok.com') !== false) {
-            $candidateUrl = 'https://' . ltrim($candidateUrl, '/');
+        $candidates = array($decoded);
+        if (preg_match_all('#https?://[^\\s<>"\\\']+#i', $decoded, $matches) && !empty($matches[0])) {
+            foreach ($matches[0] as $urlCandidate) {
+                $candidates[] = $urlCandidate;
+            }
         }
 
-        $parts = @parse_url($candidateUrl);
-        if (is_array($parts)) {
+        if (!preg_match('#^[a-z][a-z0-9+.-]*://#i', $decoded) && stripos($decoded, 'tiktok.com') !== false) {
+            $candidates[] = 'https://' . ltrim($decoded, '/');
+        }
+
+        foreach ($candidates as $candidateUrl) {
+            $candidateUrl = trim((string)$candidateUrl);
+            $candidateUrl = trim($candidateUrl, " \t\n\r\0\x0B()[]{}<>\"'");
+            if ($candidateUrl === '') {
+                continue;
+            }
+
+            $parts = @parse_url($candidateUrl);
+            if (!is_array($parts)) {
+                continue;
+            }
+
             $host = strtolower((string)($parts['host'] ?? ''));
-            $path = (string)($parts['path'] ?? '');
-            if ($host !== '' && preg_match('/(^|\\.)tiktok\\.com$/', $host)) {
-                $path = urldecode($path);
-                if (preg_match('#/@([A-Za-z0-9._]{2,32})(?:[/?#]|$)#', $path, $m)) {
-                    return strtolower($m[1]);
+            if ($host === '' || !preg_match('/(^|\\.)tiktok\\.com$/', $host)) {
+                continue;
+            }
+
+            $path = urldecode((string)($parts['path'] ?? ''));
+            if ($path !== '' && preg_match('#/@([^/?#]+)#', $path, $m)) {
+                $normalized = $this->normalize_tiktok_username_candidate($m[1]);
+                if ($normalized !== '') {
+                    return $normalized;
+                }
+            }
+
+            if (!empty($parts['query'])) {
+                parse_str((string)$parts['query'], $query);
+                foreach (array('unique_id', 'uniqueId', 'username', 'user', 'user_name', 'author') as $key) {
+                    if (isset($query[$key])) {
+                        $normalized = $this->normalize_tiktok_username_candidate($query[$key]);
+                        if ($normalized !== '') {
+                            return $normalized;
+                        }
+                    }
                 }
             }
         }
 
-        // Last fallback for TikTok text that still contains @username
-        if (stripos($decoded, 'tiktok') !== false && preg_match('/@([A-Za-z0-9._]{2,32})/', $decoded, $m)) {
+        if (stripos($decoded, 'tiktok') !== false && preg_match('/@([A-Za-z0-9._]{2,32})/i', $decoded, $m)) {
             return strtolower($m[1]);
         }
 
         return '';
+    }
+
+    private function normalize_tiktok_username_candidate($candidate)
+    {
+        $value = trim((string)$candidate);
+        if ($value === '') {
+            return '';
+        }
+
+        $value = ltrim($value, '@');
+        $value = trim($value);
+        $value = rtrim($value, ".,!?;:)]}\"'");
+
+        if (!preg_match('/^[A-Za-z0-9._]{2,32}$/', $value)) {
+            return '';
+        }
+
+        return strtolower($value);
     }
 
     private function find_influencer_by_username($username)

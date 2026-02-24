@@ -158,6 +158,13 @@ class Scrapingbot
         ));
     }
 
+    public function scrapeInstagramPost($url)
+    {
+        return $this->startScrape('instagramPost', array(
+            'url' => $url,
+        ));
+    }
+
     public function scrapeThreadsProfile($url)
     {
         return $this->startScrape('threadsProfile', array(
