@@ -3812,10 +3812,10 @@ gradient_6.addColorStop(0.75, "rgba(225, 225, 225, 0)")
 				WHERE p.name LIKE '%$q%'
 				AND p.is_operational = 0
 				AND p.status = 'Aktif'
-				AND (
-					p.is_varian = 1
-					OR (p.is_varian = 0 AND (p.parent_id IS NULL OR p.parent_id = ''))
-				)
+					AND (
+						p.is_varian = 1
+						OR (p.is_varian = 0 AND (p.parent_id IS NULL OR p.parent_id = '' OR p.parent_id = 0))
+					)
 				UNION ALL
 				SELECT CONCAT('product_3rd:', p3.id) AS id,
 					TRIM(CONCAT(p3.name, ' | ', COALESCE(p3.sku, ''), ' | ', COALESCE(p3.brand, ''), ' (Synced ', COALESCE(p3.marketplace, ''), ')')) AS text

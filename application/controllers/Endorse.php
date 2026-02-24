@@ -1840,20 +1840,19 @@ class Endorse extends BaseController
         if ($dt['link_upload']) {
             $dt['status_endorse'] = 'Posted Content';
 
-            if (preg_match('#tiktok\.com/@([^/]+)/#', $dt['link_upload'], $match)) {
-                $usernameFromUrl = $match[1];
+            $usernameFromUrl = $this->extract_tiktok_username($dt['link_upload']);
+            if ($usernameFromUrl === '') {
+                $msg = "Link upload tidak valid atau tidak dapat mengambil username TikTok.";
+                echo $this->template->alert_danger($msg);
+                die;
+            }
 
-                $influencerData = $this->mymodel->selectDataOne('influencer', ['username' => $usernameFromUrl]);
-                if ($influencerData) {
-                    $dt['influencer'] = $influencerData['id'];
-                    $dt['nama_creator'] = $influencerData['username'];
-                } else {
-                    $msg = "Username '$usernameFromUrl' tidak ditemukan di database influencer.";
-                    echo $this->template->alert_danger($msg);
-                    die;
-                }
+            $influencerData = $this->find_influencer_by_username($usernameFromUrl);
+            if (!empty($influencerData)) {
+                $dt['influencer'] = $influencerData['id'];
+                $dt['nama_creator'] = $influencerData['username'];
             } else {
-                $msg = "Link upload tidak valid atau tidak dapat mengambil username.";
+                $msg = "Username '$usernameFromUrl' tidak ditemukan di database influencer.";
                 echo $this->template->alert_danger($msg);
                 die;
             }
@@ -2132,7 +2131,7 @@ class Endorse extends BaseController
 
     private function send_bot_mou($nama_creator, $id_campaign, $produkList, $dt)
     {
-        $influencer = $this->mymodel->selectDataOne('influencer', ['username' => $nama_creator]);
+        $influencer = $this->find_influencer_by_username($nama_creator);
 
         $username   = $influencer['username'] ?? '-';
         $full_name  = $influencer['full_name'] ?? '-';
@@ -2260,20 +2259,19 @@ class Endorse extends BaseController
         if ($dt['link_upload']) {
             $dt['status_endorse'] = 'Posted Content';
 
-            if (preg_match('#tiktok\.com/@([^/]+)/#', $dt['link_upload'], $match)) {
-                $usernameFromUrl = $match[1];
+            $usernameFromUrl = $this->extract_tiktok_username($dt['link_upload']);
+            if ($usernameFromUrl === '') {
+                $msg = "Link upload tidak valid atau tidak dapat mengambil username TikTok.";
+                echo $this->template->alert_danger($msg);
+                die;
+            }
 
-                $influencerData = $this->mymodel->selectDataOne('influencer', ['username' => $usernameFromUrl]);
-                if ($influencerData) {
-                    $dt['influencer'] = $influencerData['id'];
-                    $dt['nama_creator'] = $influencerData['username'];
-                } else {
-                    $msg = "Username '$usernameFromUrl' tidak ditemukan di database influencer.";
-                    echo $this->template->alert_danger($msg);
-                    die;
-                }
+            $influencerData = $this->find_influencer_by_username($usernameFromUrl);
+            if (!empty($influencerData)) {
+                $dt['influencer'] = $influencerData['id'];
+                $dt['nama_creator'] = $influencerData['username'];
             } else {
-                $msg = "Link upload tidak valid atau tidak dapat mengambil username.";
+                $msg = "Username '$usernameFromUrl' tidak ditemukan di database influencer.";
                 echo $this->template->alert_danger($msg);
                 die;
             }
@@ -3116,7 +3114,10 @@ class Endorse extends BaseController
         $nama_creator = $this->input->post('nama_creator');
         $endorse_count = $this->mymodel->selectWithQuery("SELECT COUNT(id) AS total FROM endorse WHERE nama_creator = '$nama_creator' AND status_endorse = 'Posted Content'");
         $endorse_count = $endorse_count[0]['total'];
-        $influencer = $this->mymodel->selectDataOne('influencer', array('username' => $nama_creator));
+        $influencer = $this->find_influencer_by_username($nama_creator) ?: array(
+            'avg_view' => 0,
+            'cpm' => 0,
+        );
         $data = array(
             'endorse_count' => $endorse_count,
             'avg_views' => $this->template->separator_only($influencer['avg_view']),
@@ -3128,7 +3129,14 @@ class Endorse extends BaseController
     public function get_influencer_data_all()
     {
         $nama_creator = $this->input->post('nama_creator');
-        $influencer = $this->mymodel->selectDataOne('influencer', array('username' => $nama_creator));
+        $influencer = $this->find_influencer_by_username($nama_creator) ?: array(
+            'avg_view' => 0,
+            'cpm' => 0,
+            'avg_interaksi' => 0,
+            'avg_view_2' => 0,
+            'cpm_2' => 0,
+            'avg_interaksi_2' => 0,
+        );
         $endorse_count = $this->mymodel->selectWithQuery("SELECT COUNT(id) AS total FROM endorse WHERE nama_creator = '$nama_creator' AND status_endorse = 'Posted Content'");
         $endorse_count = $endorse_count[0]['total'];
         $data = array(
@@ -3145,6 +3153,69 @@ class Endorse extends BaseController
             'er_2' => $this->template->separator_1($influencer['avg_interaksi_2'] / $influencer['avg_view_2'] * 100) . '%',
         );
         $this->output->set_content_type('application/json')->set_output(json_encode($data));
+    }
+
+    private function extract_tiktok_username($rawInput)
+    {
+        $raw = trim((string)$rawInput);
+        if ($raw === '') {
+            return '';
+        }
+
+        $raw = html_entity_decode($raw, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $decoded = urldecode($raw);
+
+        // Handle direct input like "username" or "@username"
+        if (preg_match('/^@?([A-Za-z0-9._]{2,32})$/', $decoded, $m)) {
+            return strtolower($m[1]);
+        }
+
+        $candidateUrl = $decoded;
+        if (!preg_match('#^[a-z][a-z0-9+.-]*://#i', $candidateUrl) && stripos($candidateUrl, 'tiktok.com') !== false) {
+            $candidateUrl = 'https://' . ltrim($candidateUrl, '/');
+        }
+
+        $parts = @parse_url($candidateUrl);
+        if (is_array($parts)) {
+            $host = strtolower((string)($parts['host'] ?? ''));
+            $path = (string)($parts['path'] ?? '');
+            if ($host !== '' && preg_match('/(^|\\.)tiktok\\.com$/', $host)) {
+                $path = urldecode($path);
+                if (preg_match('#/@([A-Za-z0-9._]{2,32})(?:[/?#]|$)#', $path, $m)) {
+                    return strtolower($m[1]);
+                }
+            }
+        }
+
+        // Last fallback for TikTok text that still contains @username
+        if (stripos($decoded, 'tiktok') !== false && preg_match('/@([A-Za-z0-9._]{2,32})/', $decoded, $m)) {
+            return strtolower($m[1]);
+        }
+
+        return '';
+    }
+
+    private function find_influencer_by_username($username)
+    {
+        $normalized = strtolower(ltrim(trim((string)$username), '@'));
+        if ($normalized === '') {
+            return null;
+        }
+
+        $normalizedEsc = $this->db->escape($normalized);
+        $query = $this->mymodel->selectWithQuery("
+            SELECT *
+            FROM influencer
+            WHERE REPLACE(LOWER(TRIM(username)), '@', '') = $normalizedEsc
+            ORDER BY (status = 'Aktif') DESC, id DESC
+            LIMIT 1
+        ");
+
+        if (empty($query)) {
+            return null;
+        }
+
+        return $query[0];
     }
 
     private function send_notification($user_id, $title, $message, $type = 'info', $related_table = null, $related_id = null) {

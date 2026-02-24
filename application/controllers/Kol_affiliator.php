@@ -709,13 +709,13 @@ class Kol_affiliator extends BaseController
                     p.sku AS sku,
                     p.brand AS brand,
                     '' AS marketplace
-                FROM product p
-                WHERE p.is_operational = 0
-                AND (p.status = 'Aktif' OR p.status = 'ENABLE')
-                AND (
-                    p.is_varian = 1
-                    OR (p.is_varian = 0 AND (p.parent_id IS NULL OR p.parent_id = '' OR p.parent_id = 0))
-                )
+	                FROM product p
+	                WHERE p.is_operational = 0
+	                AND p.status = 'Aktif'
+	                AND (
+	                    p.is_varian = 1
+	                    OR (p.is_varian = 0 AND (p.parent_id IS NULL OR p.parent_id = '' OR p.parent_id = 0))
+	                )
                 {$term_clause_product}
 
                 UNION ALL
