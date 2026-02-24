@@ -22,55 +22,140 @@ class Mymodel extends CI_Model {
     		return $query->result_array();
     	}
 
-		public function get_product_dropdown_list($options = array())
-		{
-			$include_synced = $options['include_synced'] ?? true;
-			$status = $options['status'] ?? null;
-			$order = $options['order'] ?? 'name';
+			public function get_product_dropdown_list($options = array())
+			{
+				$include_synced = $options['include_synced'] ?? true;
+				$status = $options['status'] ?? array('Aktif', 'ENABLE');
+				$order = $options['order'] ?? 'name';
+				$is_operational = array_key_exists('is_operational', $options) ? $options['is_operational'] : 0;
+				$include_variant_parent = $options['include_variant_parent'] ?? true;
 
-			$product_where = "is_varian = 0";
-			$synced_where = "1=1";
+				$allowed_order = array('id', 'name', 'sku', 'brand', 'price_buy', 'price_normal', 'price_reseller', 'price_distributor');
+				if (!in_array($order, $allowed_order, true)) {
+					$order = 'name';
+				}
 
-			if (!empty($status)) {
 				$status_list = is_array($status) ? $status : array($status);
-				$status_list = array_map(function ($value) {
-					return $this->db->escape_str($value);
-				}, $status_list);
-				$status_in = "'" . implode("','", $status_list) . "'";
-				$product_where .= " AND status IN ($status_in)";
-				$synced_where .= " AND status IN ($status_in)";
-			}
+				$status_flags = array();
+				foreach ($status_list as $raw_status) {
+					$normalized = strtoupper(trim((string)$raw_status));
+					if ($normalized === '') {
+						continue;
+					}
 
-			$product_sql = "
-				SELECT id, name, sku, brand, brand_text,
-					price_buy, price_normal, price_reseller, price_distributor,
-					NULL AS marketplace, 'product' AS source_table
-				FROM product
-				WHERE $product_where
-			";
+					if ($normalized === 'AKTIF' || $normalized === 'ENABLE') {
+						$status_flags['active'] = true;
+						continue;
+					}
+					if ($normalized === 'TIDAK AKTIF' || $normalized === 'DISABLE') {
+						$status_flags['inactive'] = true;
+						continue;
+					}
+					if ($normalized === 'ALL') {
+						$status_flags['active'] = true;
+						$status_flags['inactive'] = true;
+						continue;
+					}
+				}
 
-			if ($include_synced) {
-				$synced_sql = "
-				SELECT id, name, sku, brand, NULL AS brand_text,
-					NULL AS price_buy, price_normal, NULL AS price_reseller, NULL AS price_distributor,
-					marketplace, 'product_3rd' AS source_table
-				FROM product_3rd
-					WHERE $synced_where
+				if (empty($status_flags)) {
+					$status_flags['active'] = true;
+				}
+
+				$product_where = array();
+				$product_where[] = "(p.parent_id = 0 OR p.parent_id IS NULL OR p.parent_id = '')";
+				if ($is_operational !== null && $is_operational !== '' && strtolower((string)$is_operational) !== 'all') {
+					$product_where[] = "p.is_operational = " . intval($is_operational);
+				}
+
+				if (!empty($status_flags['active']) && empty($status_flags['inactive'])) {
+					if ($include_variant_parent) {
+						$product_where[] = "(
+							(p.is_varian = 0 AND p.status = 'Aktif')
+							OR (
+								p.is_varian = 1
+								AND EXISTS (
+									SELECT 1
+									FROM product pv
+									WHERE pv.parent_id = p.id
+									AND pv.status = 'Aktif'
+								)
+							)
+						)";
+					} else {
+						$product_where[] = "p.is_varian = 0 AND p.status = 'Aktif'";
+					}
+					$synced_where = "(p3.status = 'Aktif' OR p3.status = 'ENABLE')";
+				} else if (empty($status_flags['active']) && !empty($status_flags['inactive'])) {
+					if ($include_variant_parent) {
+						$product_where[] = "(
+							(p.is_varian = 0 AND p.status = 'Tidak Aktif')
+							OR (
+								p.is_varian = 1
+								AND EXISTS (
+									SELECT 1
+									FROM product pv
+									WHERE pv.parent_id = p.id
+									AND pv.status = 'Tidak Aktif'
+								)
+							)
+						)";
+					} else {
+						$product_where[] = "p.is_varian = 0 AND p.status = 'Tidak Aktif'";
+					}
+					$synced_where = "(p3.status = 'Tidak Aktif' OR p3.status = 'DISABLE')";
+				} else {
+					if ($include_variant_parent) {
+						$product_where[] = "(
+							(p.is_varian = 0 AND p.status IN ('Aktif', 'Tidak Aktif'))
+							OR (
+								p.is_varian = 1
+								AND EXISTS (
+									SELECT 1
+									FROM product pv
+									WHERE pv.parent_id = p.id
+									AND pv.status IN ('Aktif', 'Tidak Aktif')
+								)
+							)
+						)";
+					} else {
+						$product_where[] = "p.is_varian = 0 AND p.status IN ('Aktif', 'Tidak Aktif')";
+					}
+					$synced_where = "p3.status IN ('Aktif', 'ENABLE', 'Tidak Aktif', 'DISABLE')";
+				}
+
+				$product_where_sql = implode(' AND ', $product_where);
+
+				$product_sql = "
+					SELECT p.id, p.name, p.sku, p.brand, p.brand_text,
+						p.price_buy, p.price_normal, p.price_reseller, p.price_distributor,
+						NULL AS marketplace, 'product' AS source_table
+					FROM product p
+					WHERE $product_where_sql
 				";
-				$sql = "
-					SELECT * FROM (
-						$product_sql
-						UNION ALL
-						$synced_sql
-					) AS combined
-					ORDER BY $order ASC
-				";
-			} else {
-				$sql = $product_sql . " ORDER BY $order ASC";
-			}
 
-			return $this->selectWithQuery($sql);
-		}
+				if ($include_synced) {
+					$synced_sql = "
+						SELECT p3.id, p3.name, p3.sku, p3.brand, NULL AS brand_text,
+							NULL AS price_buy, p3.price_normal, NULL AS price_reseller, NULL AS price_distributor,
+							p3.marketplace, 'product_3rd' AS source_table
+						FROM product_3rd p3
+						WHERE $synced_where
+					";
+					$sql = "
+						SELECT * FROM (
+							$product_sql
+							UNION ALL
+							$synced_sql
+						) AS combined
+						ORDER BY $order ASC
+					";
+				} else {
+					$sql = $product_sql . " ORDER BY p.$order ASC";
+				}
+
+				return $this->selectWithQuery($sql);
+			}
 
 
 		public function selectWhere($table,$where)
