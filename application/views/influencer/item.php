@@ -115,7 +115,7 @@ if ($view == 'table') {
                     } else if ($v['type'] == "Instagram") {
                         $v['img'] = base_url() . '/assets/img/icon/icon-ig.png';
                     } else if ($v['type'] == "Threads") {
-                        $v['img'] = base_url() . '/assets/img/icon/icon-ig.png';
+                        $v['img'] = base_url() . '/assets/img/icon/icon-threads.png';
                     } else if ($v['type'] == "Youtube") {
                         $v['img'] = base_url() . '/assets/img/icon/icon-youtube.png';
                     } else if ($v['type'] == "Facebook") {
@@ -315,7 +315,7 @@ if ($view == 'table') {
         } else if ($v['type'] == "Instagram") {
             $v['img'] = base_url() . '/assets/img/icon/icon-ig.png';
         } else if ($v['type'] == "Threads") {
-            $v['img'] = base_url() . '/assets/img/icon/icon-ig.png';
+            $v['img'] = base_url() . '/assets/img/icon/icon-threads.png';
         } else if ($v['type'] == "Youtube") {
             $v['img'] = base_url() . '/assets/img/icon/icon-youtube.png';
         } else if ($v['type'] == "Facebook") {
