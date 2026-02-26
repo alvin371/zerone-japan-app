@@ -188,7 +188,14 @@ class Influencer_dummy extends CI_Controller {
             if ($type !== "Tiktok") {
                 $queue = $this->template->enqueue_scrape('influencer_dummy', $id, $type, $url, 10);
                 if ($queue['status']) {
-                    return ['status' => 'queued', 'message' => 'Data eksternal sedang diproses via queue.'];
+                    $now = date("Y-m-d H:i:s");
+                    $this->db->update('influencer_dummy', [
+                        'sync_at' => $now,
+                        'updated_at' => $now,
+                        'updated_by' => strval($user['id']),
+                    ], ['id' => $id]);
+
+                    return ['status' => 'queued', 'message' => "Data eksternal {$type} sedang diproses via queue."];
                 }
                 return ['status' => 'error', 'message' => $queue['msg']];
             }
@@ -475,9 +482,32 @@ class Influencer_dummy extends CI_Controller {
         if ($type !== "Tiktok") {
             $queue = $this->template->enqueue_scrape('influencer_dummy', $id, $type, $url, 10);
             if ($queue['status']) {
+                $now = date("Y-m-d H:i:s");
+                $this->db->update('influencer_dummy', [
+                    'sync_at' => $now,
+                    'updated_at' => $now,
+                    'updated_by' => strval($user['id']),
+                ], ['id' => $id]);
+
+                $follower = intval($data['follower'] ?? 0);
+                $cpm = doubleval($data['cpm_2'] ?? 0);
+                $avgView = doubleval($data['avg_view_2'] ?? 0);
+                $er = doubleval($data['er'] ?? 0);
+                $ratecard = doubleval($data['ratecard'] ?? 0);
+                $username = strval($data['username'] ?? '');
+
                 echo json_encode([
-                    'status' => 'success',
-                    'message' => 'Data internal berhasil diperbarui. Data eksternal sedang diproses via queue.'
+                    'status' => 'queued',
+                    'queued' => true,
+                    'message' => "Data eksternal {$type} sedang diproses via queue. Hasil akan terupdate otomatis oleh cronjob.",
+                    'data' => [
+                        'follower' => $follower,
+                        'cpm' => $cpm,
+                        'er' => $er,
+                        'avg_view' => $avgView,
+                        'ratecard' => $ratecard,
+                        'username' => $username,
+                    ]
                 ]);
             } else {
                 echo json_encode([
@@ -590,7 +620,14 @@ class Influencer_dummy extends CI_Controller {
                 $ratecard = is_numeric($data['ratecard']) ? $data['ratecard'] : 0;
 
                 if ($type !== "Tiktok") {
-                    $this->template->enqueue_scrape('influencer_dummy', $id, $type, $url, 10);
+                    $queue = $this->template->enqueue_scrape('influencer_dummy', $id, $type, $url, 10);
+                    if (!empty($queue['status'])) {
+                        $this->db->update('influencer_dummy', [
+                            'sync_at' => date("Y-m-d H:i:s"),
+                            'updated_at' => date("Y-m-d H:i:s"),
+                            'updated_by' => strval($user['id']),
+                        ], ['id' => $id]);
+                    }
                     continue;
                 }
 

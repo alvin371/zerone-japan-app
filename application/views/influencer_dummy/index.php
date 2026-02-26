@@ -1625,37 +1625,48 @@ $(document).ready(function() {
             success: function(response) {
                 console.log('Sync response:', response);
 
-                if (response.status === 'success') {
-                    urlCell.attr('data-follower', response.data.follower || 0);
+                if (response.status === 'success' || response.status === 'queued') {
+                    const data = response.data || {};
+                    const isQueued = response.status === 'queued' || response.queued === true;
 
-                    engagementContent.html(`
-                        <p class="mb-1 text-black fw-bold">CPM : ${formatNumber(response.data.cpm)}</p>
-                        <p class="mb-1 text-black fw-bold">Avg View : ${formatNumber(response.data.avg_view)}</p>
-                        <p class="mb-1 text-black">ER : ${formatNumber(response.data.er)}</p>
-                    `);
+                    if (!isQueued) {
+                        const follower = Number(data.follower || 0);
+                        const cpm = Number(data.cpm || 0);
+                        const avgView = Number(data.avg_view || 0);
+                        const er = Number(data.er || 0);
 
-                    engagementFollower.text(response.data.follower?.toLocaleString('id-ID') || '0');
-                    const usernameFollower = row.find('td[data-field="url"] .engagement-followers p');
-                    usernameFollower.text(`${response.data.follower?.toLocaleString('id-ID') || '0'}`);
+                        urlCell.attr('data-follower', follower);
 
-                    if (response.data.ratecard) {
+                        engagementContent.html(`
+                            <p class="mb-1 text-black fw-bold">CPM : ${formatNumber(cpm)}</p>
+                            <p class="mb-1 text-black fw-bold">Avg View : ${formatNumber(avgView)}</p>
+                            <p class="mb-1 text-black">ER : ${formatNumber(er)}</p>
+                        `);
+
+                        engagementFollower.text(follower.toLocaleString('id-ID'));
+                        const usernameFollower = row.find('td[data-field="url"] .engagement-followers p');
+                        usernameFollower.text(`${follower.toLocaleString('id-ID')}`);
+                    }
+
+                    if (data.ratecard !== undefined && data.ratecard !== null) {
                         const ratecardCell = row.find('td[data-field="ratecard"] .view-mode');
-                        ratecardCell.text(formatNumber(response.data.ratecard.toString()));
+                        ratecardCell.text(formatNumber(String(data.ratecard)));
                     }
 
-                    if (response.data.username) {
+                    if (data.username) {
                         const usernameCell = row.find('td[data-field="username"] .view-mode');
-                        usernameCell.text(response.data.username);
+                        usernameCell.text(data.username);
                     }
 
-                    // Show success toast
                     Swal.fire({
                         toast: true,
                         position: 'top-end',
-                        icon: 'success',
-                        title: 'Data engagement berhasil diperbarui!',
+                        icon: isQueued ? 'info' : 'success',
+                        title: isQueued
+                            ? (response.message || 'Data sedang diproses via queue.')
+                            : 'Data engagement berhasil diperbarui!',
                         showConfirmButton: false,
-                        timer: 2000
+                        timer: isQueued ? 2600 : 2000
                     });
                 } else {
                     console.error('Sync failed:', response);
@@ -1859,6 +1870,7 @@ $(document).ready(function() {
             if (result.isConfirmed) {
                 let completed = 0;
                 let failed = 0;
+                let queued = 0;
                 const total = visibleIds.length;
 
                 // Disable button during refresh
@@ -1882,7 +1894,7 @@ $(document).ready(function() {
                         Swal.fire({
                             icon: failed > 0 ? 'warning' : 'success',
                             title: 'Refresh Selesai',
-                            html: `<p>Berhasil: ${completed} data</p>${failed > 0 ? `<p>Gagal: ${failed} data</p>` : ''}`,
+                            html: `<p>Berhasil: ${completed} data</p>${queued > 0 ? `<p>Queue: ${queued} data</p>` : ''}${failed > 0 ? `<p>Gagal: ${failed} data</p>` : ''}`,
                             showConfirmButton: true
                         });
                         return;
@@ -1911,24 +1923,38 @@ $(document).ready(function() {
                         data: { id: currentId },
                         dataType: 'json',
                         success: function(response) {
-                            if (response.status === 'success') {
-                                urlCell.attr('data-follower', response.data.follower || 0);
+                            if (response.status === 'success' || response.status === 'queued') {
+                                const data = response.data || {};
+                                const isQueued = response.status === 'queued' || response.queued === true;
 
-                                engagementContent.html(`
-                                    <p class="mb-1 text-black fw-bold">CPM : ${formatNumber(response.data.cpm)}</p>
-                                    <p class="mb-1 text-black fw-bold">Avg View : ${formatNumber(response.data.avg_view)}</p>
-                                    <p class="mb-1 text-black">ER : ${formatNumber(response.data.er)}</p>
-                                `);
+                                if (!isQueued) {
+                                    const follower = Number(data.follower || 0);
+                                    const cpm = Number(data.cpm || 0);
+                                    const avgView = Number(data.avg_view || 0);
+                                    const er = Number(data.er || 0);
 
-                                const usernameFollower = row.find('td[data-field="url"] .engagement-followers p');
-                                usernameFollower.text(`${response.data.follower?.toLocaleString('id-ID') || '0'}`);
+                                    urlCell.attr('data-follower', follower);
 
-                                if (response.data.ratecard) {
-                                    const ratecardCell = row.find('td[data-field="ratecard"] .view-mode');
-                                    ratecardCell.text(formatNumber(response.data.ratecard.toString()));
+                                    engagementContent.html(`
+                                        <p class="mb-1 text-black fw-bold">CPM : ${formatNumber(cpm)}</p>
+                                        <p class="mb-1 text-black fw-bold">Avg View : ${formatNumber(avgView)}</p>
+                                        <p class="mb-1 text-black">ER : ${formatNumber(er)}</p>
+                                    `);
+
+                                    const usernameFollower = row.find('td[data-field="url"] .engagement-followers p');
+                                    usernameFollower.text(`${follower.toLocaleString('id-ID')}`);
                                 }
 
-                                completed++;
+                                if (data.ratecard !== undefined && data.ratecard !== null) {
+                                    const ratecardCell = row.find('td[data-field="ratecard"] .view-mode');
+                                    ratecardCell.text(formatNumber(String(data.ratecard)));
+                                }
+
+                                if (isQueued) {
+                                    queued++;
+                                } else {
+                                    completed++;
+                                }
                             } else {
                                 failed++;
                             }
