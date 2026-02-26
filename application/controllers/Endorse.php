@@ -1229,8 +1229,9 @@ class Endorse extends BaseController
         $today = DATE("Y-m-d");
         $yesterday = DATE('Y-m-d', strtotime($today . " -1 days"));
 
-        $mode = $_GET['mode'];
-        $ids = $_GET['ids'];
+        $qry = "";
+        $mode = $_GET['mode'] ?? '';
+        $ids = $_GET['ids'] ?? '';
         if ($mode == "refresh_data") {
             $qry = " AND a.id IN ($ids) ";
             $id = $_GET['id_campaign'];
@@ -1245,19 +1246,35 @@ class Endorse extends BaseController
         $qry
         ");
 
-
+        $syncedTiktok = 0;
+        $queuedNonTiktok = 0;
+        $failedQueue = 0;
+        $queueErrors = array();
 
         foreach ($data as $k => $v) {
+            $platform = strtolower(trim((string)($v['platform'] ?? '')));
+            if ($platform !== 'tiktok') {
+                $queue = $this->template->enqueue_post_scrape('endorse', intval($v['id']), strval($v['platform'] ?? ''), strval($v['link_upload'] ?? ''), 10);
+                if (!empty($queue['status'])) {
+                    $queuedNonTiktok++;
+                } else {
+                    $failedQueue++;
+                    $queueErrors[] = "ID {$v['id']}: " . ($queue['msg'] ?? 'Gagal enqueue');
+                }
+                continue;
+            }
+
+            $syncedTiktok++;
             $id_endorse = $v['id'];
             $query = $this->mymodel->selectWithQuery("SELECT id
             FROM endorse_logs
             WHERE id_endorse = '$id_endorse' AND date = '$today' ");
-            $query = $query[0];
+            $query = $query[0] ?? array();
 
             $query_yesterday = $this->mymodel->selectWithQuery("SELECT * 
             FROM endorse_logs
             WHERE id_endorse = '$id_endorse' AND date < '$today' AND views_after > 0 ORDER BY date DESC LIMIT 1 ");
-            $query_yesterday = $query_yesterday[0];
+            $query_yesterday = $query_yesterday[0] ?? array();
 
             $dt = array();
 
@@ -1276,7 +1293,7 @@ class Endorse extends BaseController
             $dt['share_save'] = intval($query_yesterday['share_save_after']);
             $dt['views'] = intval($query_yesterday['views_after']);
 
-            if ($response['data']['view'] > 0) {
+            if (intval($response['data']['view'] ?? 0) > 0) {
                 $dt['likes'] = $response['data']['like'];
                 $dt['comment'] = $response['data']['comment'];
                 $dt['share_save'] = doubleval($response['data']['share']) + doubleval($response['data']['collect']);
@@ -1406,7 +1423,10 @@ class Endorse extends BaseController
             $id_parent = $v['id'];
             $this->update_endorse_parent($id_parent);
         }
-        $msg = 'Refresh data berhasil!';
+        $msg = "Refresh data selesai. TikTok diproses: {$syncedTiktok}, Queue Instagram/Threads: {$queuedNonTiktok}, Gagal enqueue: {$failedQueue}.";
+        if (!empty($queueErrors)) {
+            $msg .= "<br>Detail: " . implode('<br>', $queueErrors);
+        }
         echo $this->template->alert_success($msg);
     }
     function update_endorse_parent($id_parent)
@@ -1618,6 +1638,22 @@ class Endorse extends BaseController
 
         $v = $query[0];
         $detail = $query[0];
+        $platform = strtolower(trim((string)($v['platform'] ?? '')));
+        if ($platform !== 'tiktok') {
+            $queue = $this->template->enqueue_post_scrape('endorse', intval($id), strval($v['platform'] ?? ''), strval($v['link_upload'] ?? ''), 10);
+            if (!empty($queue['status'])) {
+                $this->db->update('endorse', [
+                    'sync_at' => DATE("Y-m-d H:i:s"),
+                    'updated_at' => DATE("Y-m-d H:i:s"),
+                    'updated_by' => strval($user['id']),
+                ], ['id' => $id]);
+                echo $this->template->alert_success("Data eksternal Instagram/Threads sedang diproses via queue. Hasil akan terupdate otomatis oleh cronjob.");
+            } else {
+                echo $this->template->alert_danger($queue['msg'] ?? 'Gagal menambahkan data ke queue scraping');
+            }
+            return;
+        }
+
         $response = $this->template->get_social_media($v['platform'], $v['link_upload']);
 
         $id_endorse = $v['id'];
@@ -1625,7 +1661,7 @@ class Endorse extends BaseController
         $query_yesterday = $this->mymodel->selectWithQuery("SELECT * 
         FROM endorse_logs
         WHERE id_endorse = '$id_endorse' AND date < '$today' AND views_after > 0 ORDER BY date DESC LIMIT 1");
-        $query_yesterday = $query_yesterday[0];
+        $query_yesterday = $query_yesterday[0] ?? array();
 
 
         $dt = array();
@@ -1694,7 +1730,7 @@ class Endorse extends BaseController
             $query = $this->mymodel->selectWithQuery("SELECT id
                 FROM endorse_logs
                 WHERE id_endorse = '$id_endorse' AND date = '$today' ");
-            $query = $query[0];
+            $query = $query[0] ?? array();
 
 
             $dt['id_endorse'] = strval($v['id']);
@@ -2542,7 +2578,7 @@ class Endorse extends BaseController
             }
             $list_id = substr($list_id, 0, -1);
 
-            if ($list_apid) {
+            if ($list_id) {
                 $data =  $this->mymodel->selectWithQuery("SELECT *
                 FROM endorse
                 WHERE id IN ($list_id) AND status = 'Aktif' 

@@ -1054,6 +1054,44 @@ class Template
         return ['status' => true, 'msg' => 'Added to queue'];
     }
 
+    function enqueue_post_scrape($entityType, $entityId, $type, $url, $priority = 5)
+    {
+        $CI =& get_instance();
+        $CI->load->library('scrapingbot');
+
+        if (empty($url) || empty($entityId) || empty($entityType)) {
+            return ['status' => false, 'msg' => 'Parameter enqueue tidak lengkap'];
+        }
+
+        $params = $CI->scrapingbot->buildPostScrapeParams($type, $url);
+        if (!$params) {
+            return ['status' => false, 'msg' => 'Platform post scraping belum didukung'];
+        }
+
+        $existing = $CI->db->select('id')
+            ->where('entity_type', $entityType)
+            ->where('entity_id', $entityId)
+            ->where_in('status', ['pending', 'submitted'])
+            ->get('scraping_queue')
+            ->num_rows();
+
+        if ($existing > 0) {
+            return ['status' => true, 'msg' => 'Already in queue'];
+        }
+
+        $CI->db->insert('scraping_queue', [
+            'entity_type' => $entityType,
+            'entity_id' => intval($entityId),
+            'scraper' => $params['scraper'],
+            'scrape_url' => json_encode($params['params']),
+            'status' => 'pending',
+            'priority' => intval($priority),
+            'created_at' => date('Y-m-d H:i:s'),
+        ]);
+
+        return ['status' => true, 'msg' => 'Added to queue'];
+    }
+
     function parseTiktokProfileResponse($data)
     {
         $result = [
@@ -1377,6 +1415,10 @@ class Template
         $entityId = intval($queueItem['entity_id']);
         $scraper = $queueItem['scraper'];
 
+        if ($entityType === 'endorse') {
+            return $this->process_endorse_post_result($queueItem, $resultData);
+        }
+
         if (!in_array($entityType, ['influencer', 'influencer_dummy'])) {
             return false;
         }
@@ -1489,6 +1531,199 @@ class Template
             }
         }
 
+        return true;
+    }
+
+    function process_endorse_post_result($queueItem, $resultData)
+    {
+        $CI =& get_instance();
+
+        $endorseId = intval($queueItem['entity_id'] ?? 0);
+        if ($endorseId <= 0) {
+            return false;
+        }
+
+        $scraper = strval($queueItem['scraper'] ?? '');
+        if ($scraper === 'instagramPost') {
+            $parsed = $this->parseInstagramPostResponse($resultData);
+        } else if ($scraper === 'threadsPost') {
+            $parsed = $this->parseThreadsPostResponse($resultData);
+        } else {
+            return false;
+        }
+
+        $endorse = $CI->db->where('id', $endorseId)->get('endorse')->row_array();
+        if (!$endorse) {
+            return false;
+        }
+
+        $today = date('Y-m-d');
+        $now = date('Y-m-d H:i:s');
+        $userId = strval($_SESSION['user']['id'] ?? '1');
+
+        $likesAfter = intval($parsed['like'] ?? 0);
+        $commentAfter = intval($parsed['comment'] ?? 0);
+        $shareSaveAfter = intval($parsed['share'] ?? 0) + intval($parsed['collect'] ?? 0);
+        $viewsAfter = intval($parsed['view'] ?? 0);
+        $createdAt = strval($parsed['created_at'] ?? '');
+
+        if ($likesAfter <= 0 && $commentAfter <= 0 && $shareSaveAfter <= 0 && $viewsAfter <= 0 && $createdAt === '') {
+            log_message('error', "ScrapingBot: Empty post parse result for endorse#{$endorseId}, skipping update");
+            return false;
+        }
+
+        $lastLog = $CI->db->query(
+            "SELECT likes_after, comment_after, share_save_after, views_after
+             FROM endorse_logs
+             WHERE id_endorse = ? AND date < ? AND views_after > 0
+             ORDER BY date DESC
+             LIMIT 1",
+            [$endorseId, $today]
+        )->row_array();
+
+        $likesBefore = intval($lastLog['likes_after'] ?? 0);
+        $commentBefore = intval($lastLog['comment_after'] ?? 0);
+        $shareSaveBefore = intval($lastLog['share_save_after'] ?? 0);
+        $viewsBefore = intval($lastLog['views_after'] ?? 0);
+
+        $likesNow = $likesAfter - $likesBefore;
+        $commentNow = $commentAfter - $commentBefore;
+        $shareSaveNow = $shareSaveAfter - $shareSaveBefore;
+        $viewsNow = $viewsAfter - $viewsBefore;
+
+        $totalCost = doubleval($endorse['total_cost'] ?? 0);
+        $cpmAfter = ($totalCost > 0 && $viewsAfter > 0) ? ($totalCost / $viewsAfter * 1000) : 0;
+        $cpmBefore = ($totalCost > 0 && $viewsBefore > 0) ? ($totalCost / $viewsBefore * 1000) : 0;
+        $cpmNow = ($totalCost > 0 && $viewsNow > 0) ? ($totalCost / $viewsNow * 1000) : 0;
+
+        $endorseUpdate = [
+            'likes' => $likesAfter,
+            'comment' => $commentAfter,
+            'share_save' => $shareSaveAfter,
+            'views' => $viewsAfter,
+            'cpm' => $cpmAfter,
+            'sync_at' => $now,
+            'updated_at' => $now,
+            'updated_by' => $userId,
+        ];
+
+        if ($createdAt !== '') {
+            $endorseUpdate['posting_at'] = $createdAt;
+        }
+
+        if ($viewsAfter >= 50000) {
+            $follower = 0;
+            $influencerId = intval($endorse['influencer'] ?? 0);
+            if ($influencerId > 0) {
+                $creator = $CI->db->select('follower')->where('id', $influencerId)->get('influencer')->row_array();
+                $follower = intval($creator['follower'] ?? 0);
+            }
+            if ($follower <= 0 || $viewsAfter >= intval($follower * 30 / 100)) {
+                $endorseUpdate['is_fyp'] = '1';
+            }
+        }
+
+        $CI->db->update('endorse', $endorseUpdate, ['id' => $endorseId]);
+
+        $logData = [
+            'status' => strval($endorse['status'] ?? ''),
+            'status_campaign' => strval($endorse['status_campaign'] ?? ''),
+            'id_endorse' => strval($endorseId),
+            'id_campaign' => strval($endorse['id_campaign'] ?? ''),
+            'influencer' => strval($endorse['influencer'] ?? ''),
+            'date' => $today,
+            'likes' => strval($likesNow),
+            'comment' => strval($commentNow),
+            'share_save' => strval($shareSaveNow),
+            'views' => strval($viewsNow),
+            'cpm' => strval($cpmNow),
+            'total_cost' => strval($totalCost),
+            'link_upload' => strval($endorse['link_upload'] ?? ''),
+            'platform' => strval($endorse['platform'] ?? ''),
+            'likes_after' => strval($likesAfter),
+            'comment_after' => strval($commentAfter),
+            'share_save_after' => strval($shareSaveAfter),
+            'views_after' => strval($viewsAfter),
+            'cpm_after' => strval($cpmAfter),
+            'likes_before' => strval($likesBefore),
+            'comment_before' => strval($commentBefore),
+            'share_save_before' => strval($shareSaveBefore),
+            'views_before' => strval($viewsBefore),
+            'cpm_before' => strval($cpmBefore),
+            'brand' => strval($endorse['brand'] ?? ''),
+        ];
+
+        $existingLog = $CI->db->select('id')
+            ->where('id_endorse', $endorseId)
+            ->where('date', $today)
+            ->get('endorse_logs')
+            ->row_array();
+
+        if ($existingLog) {
+            $logData['updated_at'] = $now;
+            $logData['updated_by'] = $userId;
+            $CI->db->update('endorse_logs', $logData, ['id' => $existingLog['id']]);
+        } else {
+            $logData['created_at'] = $now;
+            $logData['created_by'] = $userId;
+            $CI->db->insert('endorse_logs', $logData);
+        }
+
+        $this->refresh_endorse_campaign_summary(intval($endorse['id_campaign'] ?? 0), $userId);
+
+        return true;
+    }
+
+    private function refresh_endorse_campaign_summary($campaignId, $userId = '1')
+    {
+        $CI =& get_instance();
+
+        $campaignId = intval($campaignId);
+        if ($campaignId <= 0) {
+            return false;
+        }
+
+        $summary = $CI->db->query(
+            "SELECT
+                COALESCE(SUM(CASE WHEN status = 'Aktif' THEN total_cost ELSE 0 END), 0) AS total_cost,
+                COALESCE(SUM(CASE WHEN status = 'Aktif' THEN likes ELSE 0 END), 0) AS likes,
+                COALESCE(SUM(CASE WHEN status = 'Aktif' THEN comment ELSE 0 END), 0) AS comment,
+                COALESCE(SUM(CASE WHEN status = 'Aktif' THEN share_save ELSE 0 END), 0) AS share_save,
+                COALESCE(SUM(CASE WHEN status = 'Aktif' THEN views ELSE 0 END), 0) AS views,
+                COALESCE(AVG(CASE WHEN status = 'Aktif' THEN cpm END), 0) AS cpm,
+                COUNT(id) AS count_endorse,
+                SUM(CASE WHEN status = 'Aktif' THEN 1 ELSE 0 END) AS count_endorse_active,
+                SUM(CASE WHEN status = 'Aktif' AND link_upload != '' THEN 1 ELSE 0 END) AS count_endorse_processed,
+                COUNT(DISTINCT influencer) AS count_influencer,
+                COUNT(DISTINCT CASE WHEN status = 'Aktif' THEN influencer END) AS count_influencer_active,
+                COUNT(DISTINCT CASE WHEN status = 'Aktif' AND link_upload != '' THEN influencer END) AS count_influencer_processed
+             FROM endorse
+             WHERE id_campaign = ?",
+            [$campaignId]
+        )->row_array();
+
+        if (!$summary) {
+            return false;
+        }
+
+        $update = [
+            'total_cost' => doubleval($summary['total_cost'] ?? 0),
+            'likes' => doubleval($summary['likes'] ?? 0),
+            'comment' => doubleval($summary['comment'] ?? 0),
+            'share_save' => doubleval($summary['share_save'] ?? 0),
+            'views' => doubleval($summary['views'] ?? 0),
+            'cpm' => doubleval($summary['cpm'] ?? 0),
+            'count_endorse' => intval($summary['count_endorse'] ?? 0),
+            'count_endorse_active' => intval($summary['count_endorse_active'] ?? 0),
+            'count_endorse_processed' => intval($summary['count_endorse_processed'] ?? 0),
+            'count_influencer' => intval($summary['count_influencer'] ?? 0),
+            'count_influencer_active' => intval($summary['count_influencer_active'] ?? 0),
+            'count_influencer_processed' => intval($summary['count_influencer_processed'] ?? 0),
+            'updated_at' => date('Y-m-d H:i:s'),
+            'updated_by' => strval($userId),
+        ];
+
+        $CI->db->update('endorse_campaign', $update, ['id' => $campaignId]);
         return true;
     }
 
