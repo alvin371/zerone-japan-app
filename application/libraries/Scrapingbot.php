@@ -468,7 +468,7 @@ class Scrapingbot
             return array(
                 'scraper' => 'threadsProfile',
                 'params'  => array(
-                    'url' => 'https://www.threads.net/@' . $username,
+                    'url' => 'https://www.threads.com/@' . $username,
                 ),
             );
         }
