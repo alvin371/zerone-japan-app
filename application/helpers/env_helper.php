@@ -38,8 +38,11 @@ if (!function_exists('env')) {
 
                         $env_vars[$name] = $value;
 
-                        // Also set as PHP environment variable
-                        putenv("$name=$value");
+                        // Preserve runtime/container environment variables and
+                        // only backfill missing values from the file.
+                        if (getenv($name) === false) {
+                            putenv("$name=$value");
+                        }
                     }
                 }
             }
@@ -47,15 +50,15 @@ if (!function_exists('env')) {
             $env_loaded = true;
         }
 
-        // Return from our loaded vars
-        if (isset($env_vars[$key])) {
-            return $env_vars[$key];
-        }
-
-        // Fallback to getenv
+        // Runtime environment should override file-based defaults.
         $value = getenv($key);
         if ($value !== false) {
             return $value;
+        }
+
+        // Return from our loaded vars
+        if (isset($env_vars[$key])) {
+            return $env_vars[$key];
         }
 
         return $default;

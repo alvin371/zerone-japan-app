@@ -439,7 +439,21 @@ class Scrapingbot
 
     public function buildScrapeParams($type, $url)
     {
+        $rawUrl = trim((string) $url);
         $username = $this->extractUsername($url);
+
+        if ($type === 'Facebook') {
+            if ($rawUrl === '') {
+                return false;
+            }
+
+            return array(
+                'scraper' => 'facebookProfile',
+                'params'  => array(
+                    'url' => $rawUrl,
+                ),
+            );
+        }
 
         if (empty($username)) {
             return false;
@@ -495,6 +509,15 @@ class Scrapingbot
         if ($type === 'Threads') {
             return array(
                 'scraper' => 'threadsPost',
+                'params'  => array(
+                    'url' => $rawUrl,
+                ),
+            );
+        }
+
+        if ($type === 'Facebook') {
+            return array(
+                'scraper' => 'facebookPost',
                 'params'  => array(
                     'url' => $rawUrl,
                 ),

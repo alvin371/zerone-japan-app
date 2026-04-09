@@ -9,52 +9,9 @@ services:
       - .:/var/www/html
       - ./application/cache/sessions:/var/www/html/application/cache/sessions
     environment:
-      - DB_HOSTNAME=db
-      - DB_USERNAME=zerone
-      - DB_PASSWORD=zerone_password
-      - DB_DATABASE=zerone_japan
       - CI_ENV=development
-    depends_on:
-      db:
-        condition: service_healthy
     networks:
       - zerone-network
-
-  db:
-    image: mysql:8.0
-    ports:
-      - "3306:3306"
-    environment:
-      - MYSQL_ROOT_PASSWORD=root_password
-      - MYSQL_DATABASE=zerone_japan
-      - MYSQL_USER=zerone
-      - MYSQL_PASSWORD=zerone_password
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - zerone-network
-
-  phpmyadmin:
-    image: phpmyadmin:latest
-    ports:
-      - "8081:80"
-    environment:
-      - PMA_HOST=db
-      - PMA_USER=zerone
-      - PMA_PASSWORD=zerone_password
-    depends_on:
-      - db
-    networks:
-      - zerone-network
-
-volumes:
-  mysql_data:
 
 networks:
   zerone-network:

@@ -1423,7 +1423,7 @@ class Endorse extends BaseController
             $id_parent = $v['id'];
             $this->update_endorse_parent($id_parent);
         }
-        $msg = "Refresh data selesai. TikTok diproses: {$syncedTiktok}, Queue Instagram/Threads: {$queuedNonTiktok}, Gagal enqueue: {$failedQueue}.";
+        $msg = "Refresh data selesai. TikTok diproses: {$syncedTiktok}, Queue Instagram/Threads/Facebook: {$queuedNonTiktok}, Gagal enqueue: {$failedQueue}.";
         if (!empty($queueErrors)) {
             $msg .= "<br>Detail: " . implode('<br>', $queueErrors);
         }
@@ -1647,7 +1647,7 @@ class Endorse extends BaseController
                     'updated_at' => DATE("Y-m-d H:i:s"),
                     'updated_by' => strval($user['id']),
                 ], ['id' => $id]);
-                echo $this->template->alert_success("Data eksternal Instagram/Threads sedang diproses via queue. Hasil akan terupdate otomatis oleh cronjob.");
+                echo $this->template->alert_success("Data eksternal Instagram/Threads/Facebook sedang diproses via queue. Hasil akan terupdate otomatis oleh cronjob.");
             } else {
                 echo $this->template->alert_danger($queue['msg'] ?? 'Gagal menambahkan data ke queue scraping');
             }
