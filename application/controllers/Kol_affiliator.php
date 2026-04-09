@@ -85,27 +85,44 @@ class Kol_affiliator extends BaseController
         $data['can_delete'] = $permission_data['can_delete'];
 
         $keyword_category = trim((string)($this->input->get('keyword_category') ?? 'Username KOL'));
-        $keyword = trim((string)($this->input->get('keyword') ?? ''));
         $status_filter = trim((string)($this->input->get('status_creator') ?? ''));
 
         $data['keyword_category'] = $keyword_category;
         $data['status_creator'] = $status_filter;
-
-        $count_builder = $this->db->from('kol_campaigns');
-        $this->apply_campaign_filters($count_builder, $keyword_category, $keyword, $status_filter);
-        $total = (int) $count_builder->count_all_results();
-
-        $data['page'] = (int) ceil($total / 10);
-        $data['notif'] = '<p class="mb-1"><label class="text-notif">' . $this->template->separator_only($total) . ' data ditemukan!</label></p>';
-
-        $current_page = max(1, (int)($this->input->get('page') ?? 1));
-        $data['param'] = $this->template->get_param();
-        $data['param_pagination'] = $this->template->get_param_without('page');
-        $data['pagination'] = $this->template->pagination($data['page'], $current_page, $data['param_pagination']);
+        $data['status_creator_options'] = $this->status_creator_options;
         $data['title'] = 'KOL & Affiliator - ' . $this->template->title();
 
         $data['content'] = $this->load->view('kol_affiliator/all', $data, true);
         $this->load->view('TemplateDashboard', $data);
+    }
+
+    public function data()
+    {
+        $rows = $this->db
+            ->select('kc.*, (SELECT COUNT(*) FROM kol_posts kp WHERE kp.campaign_id = kc.id) AS total_posts', false)
+            ->from('kol_campaigns kc')
+            ->order_by('kc.id', 'DESC')
+            ->get()
+            ->result_array();
+
+        $payload = [];
+        foreach ($rows as $row) {
+            $payload[] = [
+                'id' => (int)($row['id'] ?? 0),
+                'username_kol' => (string)($row['username_kol'] ?? ''),
+                'creator' => (string)($row['creator'] ?? ''),
+                'pic_utama' => (string)($row['pic_utama'] ?? ''),
+                'product' => (string)($row['product'] ?? ''),
+                'status' => (string)($row['status'] ?? ''),
+                'total_posts' => (int)($row['total_posts'] ?? 0)
+            ];
+        }
+
+        $this->output
+            ->set_content_type('application/json')
+            ->set_output(json_encode([
+                'data' => $payload
+            ]));
     }
 
     public function item()

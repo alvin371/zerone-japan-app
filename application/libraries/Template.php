@@ -626,6 +626,18 @@ class Template
                 "msg" => "Instagram profile sync berjalan async via queue",
                 "data" => []
             ];
+        } else if ($type == "Threads") {
+            return [
+                "status" => false,
+                "msg" => "Threads profile sync berjalan async via queue",
+                "data" => []
+            ];
+        } else if ($type == "Facebook") {
+            return [
+                "status" => false,
+                "msg" => "Facebook profile sync berjalan async via queue",
+                "data" => []
+            ];
         } else if ($type == "Tiktok") {
             $username = str_replace('@', '', $username);
 
@@ -1235,6 +1247,40 @@ class Template
         return 0;
     }
 
+    private function firstValueByKeys($data, $keys, $default = null)
+    {
+        if (!is_array($data)) {
+            return $default;
+        }
+
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $data) && $data[$key] !== null && $data[$key] !== '') {
+                return $data[$key];
+            }
+        }
+
+        return $default;
+    }
+
+    private function normalizeScrapeDate($value)
+    {
+        if (is_numeric($value)) {
+            $ts = intval($value);
+            if ($ts > 9999999999) {
+                $ts = intval($ts / 1000);
+            }
+
+            return $ts > 0 ? date('Y-m-d', $ts) : '';
+        }
+
+        if (is_string($value) && trim($value) !== '') {
+            $ts = strtotime($value);
+            return $ts ? date('Y-m-d', $ts) : '';
+        }
+
+        return '';
+    }
+
     function parseThreadsProfileResponse($data)
     {
         $result = [
@@ -1408,6 +1454,133 @@ class Template
         ];
     }
 
+    function parseFacebookProfileResponse($data)
+    {
+        $result = [
+            'profile' => [
+                'account_id' => '',
+                'follower' => 0,
+                'media_count' => 0,
+                'img' => '',
+                'full_name' => '',
+            ],
+            'posts' => [],
+        ];
+
+        if (empty($data)) {
+            return $result;
+        }
+
+        $allPosts = [];
+        if (isset($data[0]) && is_array($data[0])) {
+            $allPosts = $data;
+
+            $profileItem = null;
+            foreach ($data as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+
+                if (($item['type'] ?? null) === 'profile') {
+                    $profileItem = $item;
+                    break;
+                }
+
+                if (
+                    isset($item['followers']) ||
+                    isset($item['followers_count']) ||
+                    isset($item['follower_count']) ||
+                    isset($item['page_name']) ||
+                    isset($item['name'])
+                ) {
+                    $profileItem = $item;
+                    break;
+                }
+            }
+            $data = $profileItem ?? $data[0];
+        }
+
+        if (isset($data['profile']) && is_array($data['profile'])) {
+            $data = $data['profile'];
+        } else if (isset($data['page']) && is_array($data['page'])) {
+            $data = $data['page'];
+        }
+
+        $stats = $data['stats'] ?? ($data['statistics'] ?? ($data['engagement'] ?? []));
+
+        $result['profile']['account_id'] = strval($this->firstValueByKeys($data, ['author_id', 'page_id', 'id', 'profile_id', 'username'], ''));
+        $result['profile']['follower'] = $this->normalizeMetricNumber(
+            $this->firstValueByKeys($data, ['followers', 'followers_count', 'follower_count', 'fans', 'fans_count'], $this->firstValueByKeys($stats, ['followers', 'followers_count', 'follower_count', 'fans', 'fans_count'], 0))
+        );
+        $result['profile']['media_count'] = $this->normalizeMetricNumber(
+            $this->firstValueByKeys($data, ['posts_count', 'post_count', 'media_count', 'videos_count'], $this->firstValueByKeys($stats, ['posts_count', 'post_count', 'media_count', 'videos_count'], 0))
+        );
+        $result['profile']['img'] = strval($this->firstValueByKeys($data, ['profile_image_link', 'profile_picture', 'profile_pic_url', 'avatar', 'image'], ''));
+        $result['profile']['full_name'] = strval($this->firstValueByKeys($data, ['page_name', 'profile_name', 'full_name', 'name', 'username'], ''));
+
+        $posts = $data['posts'] ?? ($data['top_posts'] ?? ($data['videos'] ?? ($allPosts ?: [])));
+        $posts = array_slice($posts, 0, 12);
+
+        foreach ($posts as $k => $v) {
+            $node = $v['node'] ?? $v;
+            if (!is_array($node) || ($node['type'] ?? '') === 'profile') {
+                continue;
+            }
+
+            $postStats = $node['stats'] ?? ($node['statistics'] ?? ($node['engagement'] ?? []));
+
+            $result['posts'][$k] = [
+                'like' => $this->normalizeMetricNumber($this->firstValueByKeys($node, ['like_count', 'likes', 'reactions', 'reaction_count'], $this->firstValueByKeys($postStats, ['like_count', 'likes', 'reactions', 'reaction_count'], 0))),
+                'share' => $this->normalizeMetricNumber($this->firstValueByKeys($node, ['share_count', 'shares', 'repost_count'], $this->firstValueByKeys($postStats, ['share_count', 'shares', 'repost_count'], 0))),
+                'comment' => $this->normalizeMetricNumber($this->firstValueByKeys($node, ['comment_count', 'comments', 'reply_count'], $this->firstValueByKeys($postStats, ['comment_count', 'comments', 'reply_count'], 0))),
+                'collect' => $this->normalizeMetricNumber($this->firstValueByKeys($node, ['save_count', 'bookmark_count'], $this->firstValueByKeys($postStats, ['save_count', 'bookmark_count'], 0))),
+                'view' => $this->normalizeMetricNumber($this->firstValueByKeys($node, ['view_count', 'views', 'play_count', 'video_view_count'], $this->firstValueByKeys($postStats, ['view_count', 'views', 'play_count', 'video_view_count'], 0))),
+            ];
+        }
+
+        return $result;
+    }
+
+    function parseFacebookPostResponse($data)
+    {
+        $item = $data;
+        if (isset($data[0]) && is_array($data[0])) {
+            $item = $data[0];
+            foreach ($data as $candidate) {
+                if (!is_array($candidate)) {
+                    continue;
+                }
+                if (($candidate['type'] ?? '') === 'profile') {
+                    continue;
+                }
+                $item = $candidate;
+                break;
+            }
+        }
+
+        if (isset($item['post']) && is_array($item['post'])) {
+            $item = $item['post'];
+        } else if (isset($item['media']) && is_array($item['media'])) {
+            $item = $item['media'];
+        } else if (isset($item['video']) && is_array($item['video'])) {
+            $item = $item['video'];
+        } else if (isset($item['reel']) && is_array($item['reel'])) {
+            $item = $item['reel'];
+        }
+
+        $stats = $item['stats'] ?? ($item['statistics'] ?? ($item['engagement'] ?? []));
+        $createdAt = $this->normalizeScrapeDate($this->firstValueByKeys($item, ['created_at', 'timestamp', 'date', 'taken_at', 'created_time'], ''));
+
+        return [
+            'like' => $this->normalizeMetricNumber($this->firstValueByKeys($item, ['like_count', 'likes', 'reactions', 'reaction_count'], $this->firstValueByKeys($stats, ['like_count', 'likes', 'reactions', 'reaction_count'], 0))),
+            'share' => $this->normalizeMetricNumber($this->firstValueByKeys($item, ['share_count', 'shares', 'repost_count'], $this->firstValueByKeys($stats, ['share_count', 'shares', 'repost_count'], 0))),
+            'comment' => $this->normalizeMetricNumber($this->firstValueByKeys($item, ['comment_count', 'comments', 'reply_count'], $this->firstValueByKeys($stats, ['comment_count', 'comments', 'reply_count'], 0))),
+            'collect' => $this->normalizeMetricNumber($this->firstValueByKeys($item, ['save_count', 'bookmark_count'], $this->firstValueByKeys($stats, ['save_count', 'bookmark_count'], 0))),
+            'view' => $this->normalizeMetricNumber($this->firstValueByKeys($item, ['view_count', 'views', 'play_count', 'video_view_count'], $this->firstValueByKeys($stats, ['view_count', 'views', 'play_count', 'video_view_count'], 0))),
+            'created_at' => $createdAt,
+        ];
+    }
+
     function process_scrape_result($queueItem, $resultData)
     {
         $CI =& get_instance();
@@ -1429,6 +1602,8 @@ class Template
             $parsed = $this->parseInstagramProfileResponse($resultData);
         } else if ($scraper === 'threadsProfile') {
             $parsed = $this->parseThreadsProfileResponse($resultData);
+        } else if ($scraper === 'facebookProfile') {
+            $parsed = $this->parseFacebookProfileResponse($resultData);
         } else {
             return false;
         }
@@ -1548,6 +1723,8 @@ class Template
             $parsed = $this->parseInstagramPostResponse($resultData);
         } else if ($scraper === 'threadsPost') {
             $parsed = $this->parseThreadsPostResponse($resultData);
+        } else if ($scraper === 'facebookPost') {
+            $parsed = $this->parseFacebookPostResponse($resultData);
         } else {
             return false;
         }

@@ -93,7 +93,7 @@
 			<label for="">Platform</label>
 			<select type="text" class="form-control" name="dt[platform]">
 				<?php
-				$arr = array("Tiktok", "Instagram", "Threads", "Twitter", "Youtube");
+				$arr = array("Tiktok", "Instagram", "Threads", "Facebook", "Youtube");
 				foreach ($arr as $v2) {
 					$text = $data['platform'] == $v2 ? 'selected' : '';
 					echo "<option $text value='$v2'>$v2</option>";
