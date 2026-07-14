@@ -1249,6 +1249,7 @@ class Endorse extends BaseController
         $syncedTiktok = 0;
         $queuedNonTiktok = 0;
         $failedQueue = 0;
+        $failedTiktok = 0;
         $queueErrors = array();
 
         foreach ($data as $k => $v) {
@@ -1264,7 +1265,6 @@ class Endorse extends BaseController
                 continue;
             }
 
-            $syncedTiktok++;
             $id_endorse = $v['id'];
             $query = $this->mymodel->selectWithQuery("SELECT id
             FROM endorse_logs
@@ -1287,18 +1287,23 @@ class Endorse extends BaseController
             $dt['date'] = $today;
 
             $response = $this->template->get_social_media($v['platform'], $v['link_upload']);
+            if (empty($response['status'])) {
+                $failedTiktok++;
+                $queueErrors[] = "ID {$v['id']}: " . ($response['msg'] ?? 'Gagal mengambil data TikTok');
+                continue;
+            }
+
+            $syncedTiktok++;
 
             $dt['likes'] = intval($query_yesterday['likes_after']);
             $dt['comment'] = intval($query_yesterday['comment_after']);
             $dt['share_save'] = intval($query_yesterday['share_save_after']);
             $dt['views'] = intval($query_yesterday['views_after']);
 
-            if (intval($response['data']['view'] ?? 0) > 0) {
-                $dt['likes'] = $response['data']['like'];
-                $dt['comment'] = $response['data']['comment'];
-                $dt['share_save'] = doubleval($response['data']['share']) + doubleval($response['data']['collect']);
-                $dt['views'] = $response['data']['view'];
-            }
+            $dt['likes'] = intval($response['data']['like'] ?? 0);
+            $dt['comment'] = intval($response['data']['comment'] ?? 0);
+            $dt['share_save'] = doubleval($response['data']['share'] ?? 0) + doubleval($response['data']['collect'] ?? 0);
+            $dt['views'] = intval($response['data']['view'] ?? 0);
 
 
             if ($dt['views'] >= 50000) {
@@ -1423,7 +1428,7 @@ class Endorse extends BaseController
             $id_parent = $v['id'];
             $this->update_endorse_parent($id_parent);
         }
-        $msg = "Refresh data selesai. TikTok diproses: {$syncedTiktok}, Queue Instagram/Threads/Facebook: {$queuedNonTiktok}, Gagal enqueue: {$failedQueue}.";
+        $msg = "Refresh data selesai. TikTok berhasil: {$syncedTiktok}, TikTok gagal: {$failedTiktok}, Queue Instagram/Threads/Facebook: {$queuedNonTiktok}, Gagal enqueue: {$failedQueue}.";
         if (!empty($queueErrors)) {
             $msg .= "<br>Detail: " . implode('<br>', $queueErrors);
         }
@@ -1655,6 +1660,10 @@ class Endorse extends BaseController
         }
 
         $response = $this->template->get_social_media($v['platform'], $v['link_upload']);
+        if (empty($response['status'])) {
+            echo $this->template->alert_danger($response['msg'] ?? 'Gagal mengambil data TikTok');
+            return;
+        }
 
         $id_endorse = $v['id'];
         $today = DATE("Y-m-d");

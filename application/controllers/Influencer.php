@@ -505,6 +505,9 @@ class Influencer extends BaseController
         $list = $this->mymodel->selectWithQuery("SELECT * FROM influencer WHERE $qry AND status = 'Aktif' ");
 
         $dt = array();
+        $syncedTiktok = 0;
+        $failedTiktok = 0;
+        $syncErrors = array();
 
         foreach ($list as $kl => $vl) {
             $id = $vl['id'];
@@ -538,9 +541,22 @@ class Influencer extends BaseController
                 $dt['cpm'] = 0;
             }
 
-            $this->db->update('influencer', $dt, array('id' => $id));
-
             $url = $query['url'];
+            if ($query['type'] == "Tiktok") {
+                $result = $this->template->syncTiktokProfile('influencer', $id, 'Tiktok', $url);
+                if (!empty($result['status'])) {
+                    $this->db->update('influencer', $dt, array('id' => $id));
+                    $syncedTiktok++;
+                } else {
+                    $failedTiktok++;
+                    if (count($syncErrors) < 5) {
+                        $syncErrors[] = "ID {$id}: " . ($result['msg'] ?? 'Gagal sinkronisasi TikTok');
+                    }
+                }
+                continue;
+            }
+
+            $this->db->update('influencer', $dt, array('id' => $id));
             if ($query['type'] != "Tiktok") {
                 $this->template->enqueue_scrape('influencer', $id, $query['type'], $url, 10);
                 continue;
@@ -566,9 +582,9 @@ class Influencer extends BaseController
                 if ($query['type'] == "Tiktok") {
                     $url = $query['url'];
                     preg_match('/@([a-zA-Z0-9_]+)/', $url, $matches);
-                    $response = $this->template->get_post_list($query['type'], $response['data']['account_id']);
+                    $response = $this->template->get_post_list($query['type'], $response['data']['account_id'], $response['data']['username'] ?? '');
                 } else {
-                    $response = $this->template->get_post_list($query['type'], $response['data']['account_id']);
+                    $response = $this->template->get_post_list($query['type'], $response['data']['account_id'], $response['data']['username'] ?? '');
                 }
 
                 if ($response['status'] == false) {
@@ -653,7 +669,10 @@ class Influencer extends BaseController
             }
         }
         if ($list) {
-            $msg = "Refresh data berhasil!";
+            $msg = "Refresh data selesai. TikTok berhasil: {$syncedTiktok}, TikTok gagal: {$failedTiktok}.";
+            if (!empty($syncErrors)) {
+                $msg .= "<br>Detail: " . implode('<br>', $syncErrors);
+            }
             echo $this->template->alert_success($msg);
             die;
         } else {
@@ -687,6 +706,26 @@ class Influencer extends BaseController
             $msg = "Pastikan status influencer Aktif!";
             echo $this->template->alert_danger($msg);
             die;
+        }
+
+        if ($query['type'] == "Tiktok") {
+            $result = $this->template->syncTiktokProfile('influencer', $id, 'Tiktok', $query['url']);
+            if (empty($result['status'])) {
+                echo $this->template->alert_danger($result['msg'] ?? 'Gagal sinkronisasi TikTok');
+                return;
+            }
+
+            $aggregate = $this->get_endorse_aggregate_map(array($id));
+            $internalUpdate = $this->build_internal_metrics_update(
+                $aggregate[$id] ?? array(),
+                strval($user['id']),
+                DATE('Y-m-d H:i:s')
+            );
+            $internalUpdate['sync_at'] = DATE('Y-m-d H:i:s');
+            $this->db->update('influencer', $internalUpdate, array('id' => $id));
+
+            echo $this->template->alert_success("Refresh data berhasil!");
+            return;
         }
 
         $endorse = $this->mymodel->selectWithQuery("SELECT COUNT(id) as frequency, SUM(total_cost) as total_cost, SUM(views) as views, 
@@ -758,9 +797,9 @@ class Influencer extends BaseController
                 $uri = explode("/", parse_url($url, PHP_URL_PATH));
                 $username = $uri[1];
                 $username = str_replace('@', '', $username);
-                $response = $this->template->get_post_list($query['type'], $response['data']['account_id']);
+                $response = $this->template->get_post_list($query['type'], $response['data']['account_id'], $response['data']['username'] ?? '');
             } else {
-                $response = $this->template->get_post_list($query['type'], $response['data']['account_id']);
+                $response = $this->template->get_post_list($query['type'], $response['data']['account_id'], $response['data']['username'] ?? '');
             }
 
             if ($response['status'] == false) {
