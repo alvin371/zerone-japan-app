@@ -1216,6 +1216,21 @@ class Endorse extends BaseController
         $data['data']['id'] = $id;
         $this->load->view("endorse/sync_all", $data);
     }
+    private function normalize_endorse_fyp_asset_url($asset_url)
+    {
+        $asset_url = trim((string) $asset_url);
+        if ($asset_url === '' || strpos($asset_url, 'data:image/') === 0 || preg_match('#^https?://#i', $asset_url)) {
+            return $asset_url;
+        }
+
+        return base_url(ltrim($asset_url, '/'));
+    }
+
+    private function download_tiktok_fyp_asset($asset_url, $id_endorse, $asset_type)
+    {
+        return $this->normalize_endorse_fyp_asset_url($asset_url);
+    }
+
     public function sync_all_process()
     {
         $id = $_POST['id'];
@@ -1286,7 +1301,11 @@ class Endorse extends BaseController
             $dt['influencer'] = strval($v['influencer']);
             $dt['date'] = $today;
 
-            $response = $this->template->get_social_media($v['platform'], $v['link_upload']);
+            $stored_content_id = strval($v['tiktok_content_id'] ?? '');
+            $stored_media_type = strval($v['tiktok_media_type'] ?? '');
+            $stored_cover = strval($v['tiktok_cover'] ?? '');
+            $stored_content_link = strval($v['tiktok_content_link'] ?? '');
+            $response = $this->template->get_social_media($v['platform'], $v['link_upload'], true, $v['influencer']);
             if (empty($response['status'])) {
                 $failedTiktok++;
                 $queueErrors[] = "ID {$v['id']}: " . ($response['msg'] ?? 'Gagal mengambil data TikTok');
@@ -1294,6 +1313,10 @@ class Endorse extends BaseController
             }
 
             $syncedTiktok++;
+            $tiktok_content_id = strval($response['data']['content_id'] ?? $stored_content_id);
+            $tiktok_media_type = strval($response['data']['media_type'] ?? $stored_media_type);
+            $tiktok_cover = strval($response['data']['cover'] ?? $stored_cover);
+            $tiktok_content_link = strval($response['data']['video_link'] ?? $stored_content_link);
 
             $dt['likes'] = intval($query_yesterday['likes_after']);
             $dt['comment'] = intval($query_yesterday['comment_after']);
@@ -1322,6 +1345,10 @@ class Endorse extends BaseController
                     $dt['is_fyp'] = "1";
                 }
             }
+            $is_fyp_content = (isset($dt['is_fyp']) && strval($dt['is_fyp']) === '1') || intval($v['is_fyp'] ?? 0) === 1;
+            if ($is_fyp_content) {
+                $tiktok_cover = $this->download_tiktok_fyp_asset($tiktok_cover, $id_endorse, 'cover');
+            }
             if ($v['total_cost'] > 0 && $dt['views'] > 0) {
                 $dt['cpm'] = doubleval($v['total_cost']) / doubleval($dt['views']) * 1000;
             } else {
@@ -1331,6 +1358,11 @@ class Endorse extends BaseController
             unset($dtt['id_endorse']);
             unset($dtt['id_campaign']);
             unset($dtt['date']);
+            $dtt['tiktok_content_id'] = $tiktok_content_id;
+            $dtt['tiktok_media_type'] = $tiktok_media_type;
+            $dtt['tiktok_cover'] = $tiktok_cover;
+            $dtt['tiktok_content_link'] = $tiktok_content_link;
+            $dtt['tiktok_fetched_at'] = DATE("Y-m-d H:i:s");
             $dtt['updated_at'] = DATE("Y-m-d H:i:s");
 
             $this->db->update('endorse', $dtt, array('id' => $id_endorse));
@@ -1343,6 +1375,11 @@ class Endorse extends BaseController
             $dtt['share_save'] = doubleval($dt['share_save']);
             $dtt['views'] = doubleval($dt['views']);
             $dtt['cpm'] = doubleval($dt['cpm']);
+            $dtt['tiktok_content_id'] = $tiktok_content_id;
+            $dtt['tiktok_media_type'] = $tiktok_media_type;
+            $dtt['tiktok_cover'] = $tiktok_cover;
+            $dtt['tiktok_content_link'] = $tiktok_content_link;
+            $dtt['tiktok_fetched_at'] = DATE("Y-m-d H:i:s");
 
             $dt['total_cost'] = doubleval($v['total_cost']);
 
@@ -1659,11 +1696,20 @@ class Endorse extends BaseController
             return;
         }
 
-        $response = $this->template->get_social_media($v['platform'], $v['link_upload']);
+        $stored_content_id = strval($v['tiktok_content_id'] ?? '');
+        $stored_media_type = strval($v['tiktok_media_type'] ?? '');
+        $stored_cover = strval($v['tiktok_cover'] ?? '');
+        $stored_content_link = strval($v['tiktok_content_link'] ?? '');
+        $response = $this->template->get_social_media($v['platform'], $v['link_upload'], true, $v['influencer']);
         if (empty($response['status'])) {
             echo $this->template->alert_danger($response['msg'] ?? 'Gagal mengambil data TikTok');
             return;
         }
+
+        $tiktok_content_id = strval($response['data']['content_id'] ?? $stored_content_id);
+        $tiktok_media_type = strval($response['data']['media_type'] ?? $stored_media_type);
+        $tiktok_cover = strval($response['data']['cover'] ?? $stored_cover);
+        $tiktok_content_link = strval($response['data']['video_link'] ?? $stored_content_link);
 
         $id_endorse = $v['id'];
         $today = DATE("Y-m-d");
@@ -1718,11 +1764,21 @@ class Endorse extends BaseController
             }
         }
 
+        $is_fyp_content = (isset($dt['is_fyp']) && strval($dt['is_fyp']) === '1') || intval($v['is_fyp'] ?? 0) === 1;
+        if ($is_fyp_content) {
+            $tiktok_cover = $this->download_tiktok_fyp_asset($tiktok_cover, $id, 'cover');
+        }
+
         if ($v['total_cost'] > 0 && $dt['views'] > 0) {
             $dt['cpm'] = doubleval($v['total_cost']) / doubleval($dt['views']) * 1000;
         } else {
             $dt['cpm'] = 0;
         }
+        $dt['tiktok_content_id'] = $tiktok_content_id;
+        $dt['tiktok_media_type'] = $tiktok_media_type;
+        $dt['tiktok_cover'] = $tiktok_cover;
+        $dt['tiktok_content_link'] = $tiktok_content_link;
+        $dt['tiktok_fetched_at'] = DATE("Y-m-d H:i:s");
         $dt['updated_at'] = DATE("Y-m-d H:i:s");
 
         if ($this->db->update('endorse', $dt, array('id' => $id))) {
@@ -1730,6 +1786,11 @@ class Endorse extends BaseController
             unset($dt['is_fyp']);
             unset($dt['posting_at']);
             unset($dt['sync_at']);
+            unset($dt['tiktok_content_id']);
+            unset($dt['tiktok_media_type']);
+            unset($dt['tiktok_cover']);
+            unset($dt['tiktok_content_link']);
+            unset($dt['tiktok_fetched_at']);
 
             $today = DATE("Y-m-d");
             // $today = "2024-06-18";
@@ -1825,6 +1886,28 @@ class Endorse extends BaseController
         }
     }
 
+
+    public function get_tiktok_photo_images()
+    {
+        $content_id = $this->input->post('content_id');
+        $url = $this->input->post('url');
+        if (!$content_id && $url) {
+            $parts = explode('/photo/', $url);
+            if (count($parts) > 1) {
+                $tail = explode('?', end($parts))[0];
+                $content_id = $tail;
+            }
+        }
+
+        $result = $this->template->get_tiktok_photo_images($content_id, $url);
+        $this->output->set_content_type('application/json')->set_output(json_encode($result));
+    }
+
+    public function get_tiktok_video_play()
+    {
+        $result = $this->template->get_tiktok_video_play($this->input->post('url'));
+        $this->output->set_content_type('application/json')->set_output(json_encode($result));
+    }
 
     public function edit()
     {

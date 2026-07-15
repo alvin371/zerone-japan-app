@@ -50,7 +50,7 @@ class TemplateTikTokProviderTest extends TestCase
         $this->assertSame('2023-05-09', $result['data']['created_at']);
     }
 
-    public function testProfileMapsNumericAccountIdAndMediumAvatar()
+    public function testProfileMapsSecUidAndLargerAvatar()
     {
         $template = new FixtureTemplate();
         $template->responses[] = array(
@@ -58,10 +58,10 @@ class TemplateTikTokProviderTest extends TestCase
             'msg' => 'success',
             'data' => array(
                 'user' => array(
-                    'id' => '107955',
+                    'secUid' => 'MS4wLjABAAAAExample',
                     'uniqueId' => 'tiktok',
                     'nickname' => 'TikTok',
-                    'avatarMedium' => 'https://example.test/avatar-medium.webp',
+                    'avatarLarger' => 'https://example.test/avatar-larger.webp',
                 ),
                 'stats' => array(
                     'followerCount' => 94822355,
@@ -73,11 +73,11 @@ class TemplateTikTokProviderTest extends TestCase
         $result = $template->get_tiktok_profile_info('https://www.tiktok.com/@tiktok');
 
         $this->assertTrue($result['status']);
-        $this->assertSame('107955', $result['data']['account_id']);
+        $this->assertSame('MS4wLjABAAAAExample', $result['data']['account_id']);
         $this->assertSame('tiktok', $result['data']['username']);
         $this->assertSame(94822355, $result['data']['follower']);
         $this->assertSame(1550, $result['data']['media_count']);
-        $this->assertSame('https://example.test/avatar-medium.webp', $result['data']['img']);
+        $this->assertSame('https://example.test/avatar-larger.webp', $result['data']['img']);
     }
 
     public function testRecentVideosMapsOnlyTheFirstTenPosts()
