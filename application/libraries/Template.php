@@ -288,10 +288,10 @@ class Template
         return '<div class="col-md-12">' . $item . '</div>';
     }
 
-    function curlRequest($url, $headers = [])
+    function curlRequest($url, $headers = [], $options = [])
     {
         $curl = curl_init();
-        curl_setopt_array($curl, [
+        $curlOptions = [
             CURLOPT_URL => $url,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_ENCODING => "",
@@ -300,7 +300,16 @@ class Template
             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
             CURLOPT_CUSTOMREQUEST => "GET",
             CURLOPT_HTTPHEADER => $headers,
-        ]);
+        ];
+
+        if (!empty($options['timeout_ms'])) {
+            $curlOptions[CURLOPT_TIMEOUT_MS] = max(1, intval($options['timeout_ms']));
+        }
+        if (!empty($options['connect_timeout_ms'])) {
+            $curlOptions[CURLOPT_CONNECTTIMEOUT_MS] = max(1, intval($options['connect_timeout_ms']));
+        }
+
+        curl_setopt_array($curl, $curlOptions);
 
         $response = curl_exec($curl);
         $info = curl_getinfo($curl);
@@ -379,6 +388,31 @@ class Template
         }
 
         return $lastResponse;
+    }
+
+    function tiktok_provider_request($url, $context, $isValidResponse)
+    {
+        $response = $this->curlRequest($url, $this->getRapidApiHeaders(true), array(
+            'timeout_ms' => 2000,
+            'connect_timeout_ms' => 500,
+        ));
+        $isValid = is_callable($isValidResponse) && $isValidResponse($response);
+
+        $this->log_rapidapi_debug($context, $response, 1, 1, $isValid);
+
+        if (!$isValid) {
+            $meta = is_array($response) ? ($response['__meta'] ?? array()) : array();
+            $this->log_endpoint_trace('tiktok_provider_failure', array(
+                'source' => strval($context['source'] ?? ''),
+                'endpoint' => strval($context['endpoint'] ?? ''),
+                'http_code' => intval($meta['http_code'] ?? 0),
+                'elapsed_ms' => intval(round(floatval($meta['total_time'] ?? 0) * 1000)),
+                'curl_error' => strval($meta['curl_error'] ?? ''),
+                'provider_code' => is_array($response) ? ($response['code'] ?? null) : null,
+            ));
+        }
+
+        return $response;
     }
 
     function shorten_text($text, $max = 160)
@@ -596,7 +630,12 @@ class Template
             'data' => array(),
         );
 
-        if ($this->is_rate_limited_response($rawResponse)) {
+        $curlError = strtolower(strval($rawResponse['__meta']['curl_error'] ?? ''));
+        if (strpos($curlError, 'timed out') !== false || strpos($curlError, 'timeout') !== false) {
+            $result['code'] = 'provider_timeout';
+            $result['retryable'] = true;
+            $result['msg'] = 'Layanan TikTok sedang lambat. Silakan tunggu beberapa saat lalu coba refresh lagi.';
+        } else if ($this->is_rate_limited_response($rawResponse)) {
             $result['code'] = 'rate_limited';
             $result['retryable'] = true;
         }
@@ -611,12 +650,12 @@ class Template
         }
 
         $requestUrl = $this->tiktok_provider_url('/index/Tiktok/getVideoInfo', array('url' => $url));
-        $rawResponse = $this->curlRequestWithRetry($requestUrl, $this->getRapidApiHeaders(true), function ($response) {
-            return intval($response['code'] ?? -1) === 0 && !empty($response['data']) && is_array($response['data']);
-        }, 3, 300, array(
+        $rawResponse = $this->tiktok_provider_request($requestUrl, array(
             'source' => 'get_social_media',
             'endpoint' => '/index/Tiktok/getVideoInfo',
-        ));
+        ), function ($response) {
+            return intval($response['code'] ?? -1) === 0 && !empty($response['data']) && is_array($response['data']);
+        });
 
         $data = $rawResponse['data'] ?? array();
         if (intval($rawResponse['code'] ?? -1) !== 0 || empty($data) || !is_array($data)) {
@@ -645,13 +684,12 @@ class Template
         }
 
         $requestUrl = $this->tiktok_provider_url('/index/Tiktok/getUserInfo', array('unique_id' => $username));
-        $rawResponse = $this->curlRequestWithRetry($requestUrl, $this->getRapidApiHeaders(true), function ($response) {
-            return intval($response['code'] ?? -1) === 0 && !empty($response['data']['user']['uniqueId']);
-        }, 3, 300, array(
+        $rawResponse = $this->tiktok_provider_request($requestUrl, array(
             'source' => 'get_account_id',
             'endpoint' => '/index/Tiktok/getUserInfo',
-            'username' => $username,
-        ));
+        ), function ($response) {
+            return intval($response['code'] ?? -1) === 0 && !empty($response['data']['user']['uniqueId']);
+        });
 
         $user = $rawResponse['data']['user'] ?? array();
         $stats = $rawResponse['data']['stats'] ?? array();
@@ -685,15 +723,14 @@ class Template
             'count' => 10,
             'cursor' => 0,
         ));
-        $rawResponse = $this->curlRequestWithRetry($requestUrl, $this->getRapidApiHeaders(true), function ($response) {
+        $rawResponse = $this->tiktok_provider_request($requestUrl, array(
+            'source' => 'get_post_list',
+            'endpoint' => '/index/Tiktok/getUserVideos',
+        ), function ($response) {
             return intval($response['code'] ?? -1) === 0
                 && isset($response['data']['videos'])
                 && is_array($response['data']['videos']);
-        }, 3, 300, array(
-            'source' => 'get_post_list',
-            'endpoint' => '/index/Tiktok/getUserVideos',
-            'account_id' => $accountId,
-        ));
+        });
 
         $videos = $rawResponse['data']['videos'] ?? array();
         if (intval($rawResponse['code'] ?? -1) !== 0 || !is_array($videos) || empty($videos)) {
@@ -882,76 +919,16 @@ class Template
             return $response;
         }
 
-        $item = null;
-        $curl = curl_init();
-        curl_setopt_array($curl, array(
-            CURLOPT_URL => $url,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_ENCODING => '',
-            CURLOPT_MAXREDIRS => 10,
-            CURLOPT_TIMEOUT => 0,
-            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:100.0) Gecko/20100101 Firefox/100.0',
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-            CURLOPT_CUSTOMREQUEST => 'GET',
-        ));
-        $page = curl_exec($curl);
-        curl_close($curl);
-
-        if (!empty($page)) {
-            $pattern = '/<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application\\/json">(.*?)<\\/script>/s';
-            preg_match($pattern, $page, $matches);
-            if (isset($matches[1])) {
-                $json = json_decode($matches[1], true);
-                if (is_array($json)) {
-                    $item = $json['__DEFAULT_SCOPE__']['webapp.video-detail']['itemInfo']['itemStruct'] ?? null;
-                }
-            }
-        }
-
-        $has_valid_stats = !empty($item) && !empty($item['stats']) && (
-            intval($item['stats']['diggCount'] ?? 0) > 0 ||
-            intval($item['stats']['shareCount'] ?? 0) > 0 ||
-            intval($item['stats']['commentCount'] ?? 0) > 0 ||
-            intval($item['stats']['collectCount'] ?? 0) > 0 ||
-            intval($item['stats']['playCount'] ?? 0)
-        );
-
-        if ($has_valid_stats) {
-            $response['data']['like'] = intval($item['stats']['diggCount'] ?? 0);
-            $response['data']['share'] = intval($item['stats']['shareCount'] ?? 0);
-            $response['data']['comment'] = intval($item['stats']['commentCount'] ?? 0);
-            $response['data']['collect'] = intval($item['stats']['collectCount'] ?? 0);
-            $response['data']['view'] = intval($item['stats']['playCount'] ?? 0);
-            $response['data']['created_at'] = !empty($item['createTime']) ? date('Y-m-d', intval($item['createTime'])) : '';
-            $response['data']['content_id'] = strval($item['id'] ?? $video_id);
-            $response['data']['media_type'] = (!empty($item['imagePost']['images']) || !empty($item['imagePost']['cover'])) ? 'photo' : 'video';
-            $response['data']['cover'] = $this->extract_tiktok_cover_from_item($item);
-
-            if ($fetch_media_assets && $response['data']['media_type'] === 'photo') {
-                foreach (($item['imagePost']['images'] ?? array()) as $image) {
-                    if (!empty($image['imageURL']['urlList'][0])) {
-                        $response['data']['images'][] = (string) $image['imageURL']['urlList'][0];
-                    }
-                }
-                if (!empty($response['data']['images'])) {
-                    $response['data']['video_link'] = json_encode($response['data']['images']);
-                } elseif ($response['data']['cover'] !== '') {
-                    $response['data']['video_link'] = json_encode(array($response['data']['cover']));
-                }
-            }
-            return $response;
-        }
-
         $detailUrl = $this->tiktok_provider_url('/index/Tiktok/getVideoInfo', array('url' => $url, 'hd' => 0));
-        $fallback = $this->curlRequestWithRetry($detailUrl, $this->getRapidApiHeaders(true), function ($raw) {
+        $fallback = $this->tiktok_provider_request($detailUrl, array(
+            'source' => 'get_social_media',
+            'endpoint' => '/index/Tiktok/getVideoInfo',
+        ), function ($raw) {
             return intval($raw['code'] ?? -1) === 0 && !empty($raw['data']['id']);
-        }, 3, 300, array('source' => 'get_social_media', 'endpoint' => '/index/Tiktok/getVideoInfo'));
+        });
         $data = $fallback['data'] ?? array();
         if (intval($fallback['code'] ?? -1) !== 0 || empty($data)) {
-            $response['status'] = false;
-            $response['msg'] = 'Response tiktok ' . $video_id . ' tidak ditemukan';
-            return $response;
+            return $this->tiktok_provider_failure($fallback, 'Response TikTok ' . $video_id . ' tidak ditemukan');
         }
 
         $response['data']['like'] = intval($data['digg_count'] ?? 0);
