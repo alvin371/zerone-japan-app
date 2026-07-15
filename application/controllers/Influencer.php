@@ -542,20 +542,6 @@ class Influencer extends BaseController
             }
 
             $url = $query['url'];
-            if ($query['type'] == "Tiktok") {
-                $result = $this->template->syncTiktokProfile('influencer', $id, 'Tiktok', $url);
-                if (!empty($result['status'])) {
-                    $this->db->update('influencer', $dt, array('id' => $id));
-                    $syncedTiktok++;
-                } else {
-                    $failedTiktok++;
-                    if (count($syncErrors) < 5) {
-                        $syncErrors[] = "ID {$id}: " . ($result['msg'] ?? 'Gagal sinkronisasi TikTok');
-                    }
-                }
-                continue;
-            }
-
             $this->db->update('influencer', $dt, array('id' => $id));
             if ($query['type'] != "Tiktok") {
                 $this->template->enqueue_scrape('influencer', $id, $query['type'], $url, 10);
@@ -592,6 +578,9 @@ class Influencer extends BaseController
                     // echo $this->template->alert_danger($msg);
                     // die;
                 } else {
+                    if ($query['type'] == "Tiktok") {
+                        $syncedTiktok++;
+                    }
                     $dt = array();
                     $dt['updated_at'] = DATE("Y-m-d H:i:s");
                     $dt['updated_by'] = strval($user['id']);
@@ -706,26 +695,6 @@ class Influencer extends BaseController
             $msg = "Pastikan status influencer Aktif!";
             echo $this->template->alert_danger($msg);
             die;
-        }
-
-        if ($query['type'] == "Tiktok") {
-            $result = $this->template->syncTiktokProfile('influencer', $id, 'Tiktok', $query['url']);
-            if (empty($result['status'])) {
-                echo $this->template->alert_danger($result['msg'] ?? 'Gagal sinkronisasi TikTok');
-                return;
-            }
-
-            $aggregate = $this->get_endorse_aggregate_map(array($id));
-            $internalUpdate = $this->build_internal_metrics_update(
-                $aggregate[$id] ?? array(),
-                strval($user['id']),
-                DATE('Y-m-d H:i:s')
-            );
-            $internalUpdate['sync_at'] = DATE('Y-m-d H:i:s');
-            $this->db->update('influencer', $internalUpdate, array('id' => $id));
-
-            echo $this->template->alert_success("Refresh data berhasil!");
-            return;
         }
 
         $endorse = $this->mymodel->selectWithQuery("SELECT COUNT(id) as frequency, SUM(total_cost) as total_cost, SUM(views) as views, 
