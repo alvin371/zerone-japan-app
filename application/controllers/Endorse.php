@@ -1702,6 +1702,11 @@ class Endorse extends BaseController
         $stored_content_link = strval($v['tiktok_content_link'] ?? '');
         $response = $this->template->get_social_media($v['platform'], $v['link_upload'], true, $v['influencer']);
         if (empty($response['status'])) {
+            $this->template->log_endpoint_trace('endorse_tiktok_sync_failure', array(
+                'endorse_id' => intval($id),
+                'campaign_id' => intval($v['id_campaign'] ?? 0),
+                'failure_code' => strval($response['code'] ?? 'provider_unavailable'),
+            ));
             echo $this->template->alert_danger($response['msg'] ?? 'Gagal mengambil data TikTok');
             return;
         }
