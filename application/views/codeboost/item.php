@@ -14,7 +14,8 @@
     }
     
     if ($v['link_upload']) {
-        $v['img'] = '<a href="' . $v['link_upload'] . '" target="_blank"><img style="width:40px;border-radius:10px;" class="mt-0" src="' . $v['img'] . '"></a>';
+        $tiktok_preview = $v['platform'] == "Tiktok" ? ' data-tiktok-url="' . $v['link_upload'] . '"' : '';
+        $v['img'] = '<a href="' . $v['link_upload'] . '" target="_blank"' . $tiktok_preview . '><img style="width:40px;border-radius:10px;" class="mt-0" src="' . $v['img'] . '"></a>';
     } else {
         $v['img'] = '<img style="width:40px;border-radius:10px; filter: grayscale(100%)!important;" class="mt-0" src="' . $v['img'] . '">';
     }

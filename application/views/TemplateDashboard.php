@@ -2035,6 +2035,8 @@ if (!$_SESSION['is_login']) {
       box-shadow: 0 6px 16px rgba(108, 117, 125, 0.3) !important;
     }
   </style>
+  <script>window.base_url = '<?= base_url() ?>';</script>
+  <script src="<?= base_url() ?>assets/js/tiktok-media-preview.js"></script>
 </body>
 
 </html>
