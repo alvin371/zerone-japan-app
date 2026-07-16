@@ -1264,6 +1264,38 @@ class Template
         return $response;
     }
 
+    function get_social_media_batch(array $tasks, int $maxConcurrent = 10, float $deadlineSeconds = 45.0): array
+    {
+        $results = [];
+        $startedAt = microtime(true);
+
+        foreach ($tasks as $idx => $task) {
+            if ($deadlineSeconds > 0 && (microtime(true) - $startedAt) >= $deadlineSeconds) {
+                $results[$idx] = $this->deferredBatchResult();
+                continue;
+            }
+
+            $results[$idx] = $this->get_social_media(
+                $task['platform'] ?? '',
+                $task['url'] ?? '',
+                true,
+                $task['influencer_id'] ?? null
+            );
+        }
+
+        return $results;
+    }
+
+    private function deferredBatchResult(): array
+    {
+        return [
+            'status' => false,
+            'msg' => 'Deferred: batch wall-clock budget reached',
+            'data' => [],
+            'deferred' => true,
+        ];
+    }
+
     function enqueue_scrape($entityType, $entityId, $type, $url, $priority = 5)
     {
         $CI =& get_instance();

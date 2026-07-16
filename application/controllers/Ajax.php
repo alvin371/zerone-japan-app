@@ -7184,4 +7184,31 @@ gradient_5.addColorStop(0.75, "rgba(225, 225, 225, 0)")
 		return $result;
 	}
 
+	public function refresh_campaign_endorses()
+	{
+		$id_campaign = intval($this->input->get('id_campaign'));
+		if ($id_campaign <= 0) {
+			header('Content-Type: application/json; charset=utf-8');
+			echo json_encode(['status' => false, 'msg' => 'Campaign ID required']);
+			return;
+		}
+
+		$user_id = intval($_SESSION['user']['id'] ?? 0);
+		$this->load->library('EndorseRefreshQueueService');
+		$result = $this->endorserefreshqueueservice->enqueueCampaign($id_campaign, $user_id);
+
+		header('Content-Type: application/json; charset=utf-8');
+		echo json_encode($result);
+	}
+
+	public function refresh_all_active_endorses()
+	{
+		$user_id = intval($_SESSION['user']['id'] ?? 0);
+		$this->load->library('EndorseRefreshQueueService');
+		$result = $this->endorserefreshqueueservice->enqueueAllActive($user_id);
+
+		header('Content-Type: application/json; charset=utf-8');
+		echo json_encode($result);
+	}
+
 }
