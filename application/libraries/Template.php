@@ -364,6 +364,17 @@ class Template
         return $headers;
     }
 
+    function getTikTokScrapeHeaders()
+    {
+        $headers = array();
+        $cookie = trim((string) env('TIKTOK_SESSION_COOKIE', ''));
+        if ($cookie !== '') {
+            $headers[] = "Cookie: {$cookie}";
+        }
+
+        return $headers;
+    }
+
     function curlRequestWithRetry($url, $headers, $isValidResponse, $maxRetry = 3, $delayMs = 300, $debugContext = array())
     {
         $lastResponse = null;
@@ -962,129 +973,289 @@ class Template
         $response = array();
         $response["status"] = true;
         $response["msg"] = "";
-        $response["data"] = array();
+        $response["data"] = array(
+            "like" => 0,
+            "share" => 0,
+            "comment" => 0,
+            "collect" => 0,
+            "view" => 0,
+            "created_at" => "",
+            "content_id" => "",
+            "media_type" => "",
+            "video_link" => "",
+            "cover" => "",
+            "images" => array(),
+        );
         if ($type == "Tiktok") {
-            return $this->get_tiktok_social_media($url, $fetch_media_assets);
+            if ($url) {
+                $video_id = $this->extract_tiktok_content_id($url);
+                $response["data"]["content_id"] = $video_id;
+                $response["data"]["media_type"] = $this->detect_tiktok_media_type_from_url($url);
+
+                if (empty($video_id)) {
+                    $response["status"] = false;
+                    $response["msg"] = "Response tiktok " . $url . " tidak ditemukan";
+                    return $response;
+                }
+
+                $item = null;
+                $curl = curl_init();
+                curl_setopt_array($curl, array(
+                    CURLOPT_URL => $url,
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_ENCODING => '',
+                    CURLOPT_MAXREDIRS => 10,
+                    CURLOPT_TIMEOUT => 0,
+                    CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:100.0) Gecko/20100101 Firefox/100.0',
+                    CURLOPT_FOLLOWLOCATION => true,
+                    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                    CURLOPT_CUSTOMREQUEST => 'GET',
+                    CURLOPT_HTTPHEADER => $this->getTikTokScrapeHeaders(),
+                ));
+
+                $responsee = curl_exec($curl);
+                curl_close($curl);
+
+                if (!empty($responsee)) {
+                    $pattern = '/<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application\\/json">(.*?)<\\/script>/s';
+                    preg_match($pattern, $responsee, $matches);
+                    if (isset($matches[1])) {
+                        $jsonContent = $matches[1];
+                        $json = json_decode($jsonContent, true);
+                        if (is_array($json)) {
+                            $item = $json['__DEFAULT_SCOPE__']['webapp.video-detail']['itemInfo']['itemStruct'] ?? null;
+                        }
+                    }
+                }
+
+                $has_valid_stats = !empty($item) && !empty($item['stats']) &&
+                    (intval($item['stats']['diggCount'] ?? 0) > 0 ||
+                        intval($item['stats']['shareCount'] ?? 0) > 0 ||
+                        intval($item['stats']['commentCount'] ?? 0) > 0 ||
+                        intval($item['stats']['collectCount'] ?? 0) > 0 ||
+                        intval($item['stats']['playCount'] ?? 0) > 0);
+
+                if ($has_valid_stats) {
+                    $response["data"]["like"] = intval($item['stats']['diggCount'] ?? 0);
+                    $response["data"]["share"] = intval($item['stats']['shareCount'] ?? 0);
+                    $response["data"]["comment"] = intval($item['stats']['commentCount'] ?? 0);
+                    $response["data"]["collect"] = intval($item['stats']['collectCount'] ?? 0);
+                    $response["data"]["view"] = intval($item['stats']['playCount'] ?? 0);
+                    if (intval($item['createTime'] ?? 0) > 0) {
+                        $response["data"]["created_at"] = date("Y-m-d", intval($item['createTime']));
+                    }
+                    if (!empty($item['id'])) {
+                        $response["data"]["content_id"] = (string)$item['id'];
+                    }
+
+                    if (!empty($item['imagePost']['images']) || !empty($item['imagePost']['cover'])) {
+                        $response["data"]["media_type"] = "photo";
+                    } else {
+                        $response["data"]["media_type"] = "video";
+                    }
+                    $response["data"]["cover"] = $this->extract_tiktok_cover_from_item($item);
+
+                    if ($fetch_media_assets && $response["data"]["media_type"] === "photo") {
+                        $photo_urls = array();
+                        foreach (($item['imagePost']['images'] ?? array()) as $img) {
+                            if (!empty($img['imageURL']['urlList'][0])) {
+                                $photo_urls[] = (string)$img['imageURL']['urlList'][0];
+                            }
+                        }
+                        if (count($photo_urls) > 0) {
+                            $response["data"]["images"] = $photo_urls;
+                            $response["data"]["video_link"] = json_encode($photo_urls);
+                        } else if ($response["data"]["cover"] !== "") {
+                            $response["data"]["video_link"] = json_encode(array($response["data"]["cover"]));
+                        }
+                    }
+                } else {
+                    $detail_url = "https://tiktok-video-no-watermark10.p.rapidapi.com/index/Tiktok/getVideoInfo?url=" . urlencode($url) . "&hd=0";
+                    $headers = array_merge(
+                        array("Content-Type: application/json"),
+                        $this->getRapidApiHeaders()
+                    );
+
+                    $responsee = $this->curlRequestWithRetry($detail_url, $headers, function ($resp) {
+                        return intval($resp['code'] ?? -1) === 0 && !empty($resp['data']['id']);
+                    });
+
+                    $resp_ok = intval($responsee['code'] ?? -1) === 0;
+                    $fallback = $responsee['data'] ?? null;
+
+                    if ($resp_ok && !empty($fallback)) {
+                        $response["data"]["like"] = intval($fallback['digg_count'] ?? 0);
+                        $response["data"]["share"] = intval($fallback['share_count'] ?? 0);
+                        $response["data"]["comment"] = intval($fallback['comment_count'] ?? 0);
+                        $response["data"]["collect"] = intval($fallback['collect_count'] ?? 0);
+                        $response["data"]["view"] = intval($fallback['play_count'] ?? 0);
+                        if (intval($fallback['create_time'] ?? 0) > 0) {
+                            $response["data"]["created_at"] = date("Y-m-d", intval($fallback['create_time']));
+                        }
+                        if (!empty($fallback['id'])) {
+                            $response["data"]["content_id"] = (string)$fallback['id'];
+                        }
+                        $response["data"]["cover"] = strval($fallback['cover'] ?? ($fallback['origin_cover'] ?? ($fallback['ai_dynamic_cover'] ?? '')));
+
+                        if (!empty($fallback['images']) || $response["data"]["media_type"] === "photo") {
+                            $response["data"]["media_type"] = "photo";
+                        } else {
+                            $response["data"]["media_type"] = "video";
+                        }
+
+                        if ($fetch_media_assets) {
+                            if ($response["data"]["media_type"] === "photo" && !empty($fallback['images']) && is_array($fallback['images'])) {
+                                $response["data"]["images"] = array_values(array_filter($fallback['images'], function ($img) {
+                                    return is_string($img) && $img !== '';
+                                }));
+                                if (count($response["data"]["images"]) > 0) {
+                                    $response["data"]["video_link"] = json_encode($response["data"]["images"]);
+                                } else if ($response["data"]["cover"] !== "") {
+                                    $response["data"]["video_link"] = json_encode(array($response["data"]["cover"]));
+                                }
+                            } else if ($response["data"]["media_type"] !== "photo" && !empty($fallback['play'])) {
+                                $response["data"]["video_link"] = (string)$fallback['play'];
+                            }
+                        }
+                    } else {
+                        $response["status"] = false;
+                        $response["msg"] = "Response tiktok " . $video_id . " tidak ditemukan";
+                    }
+                }
+            } else {
+                $response["status"] = false;
+                $response["msg"] = "URL tidak ditemukan";
+            }
         } else if ($type == "Instagram") {
-            $defaultData = array(
-                'like' => 0,
-                'share' => 0,
-                'comment' => 0,
-                'collect' => 0,
-                'view' => 0,
-                'created_at' => '',
-            );
-
             if (!$url) {
                 $response["status"] = false;
                 $response["msg"] = "URL tidak ditemukan";
-                $response["data"] = $defaultData;
                 return $response;
             }
 
-            $CI =& get_instance();
-            $CI->load->library('scrapingbot');
+            $api_url = "https://instagram-looter2.p.rapidapi.com/post?url=" . urlencode($url);
+            $headers = [
+                "Content-Type: application/json",
+                "x-rapidapi-host: instagram-looter2.p.rapidapi.com",
+                "x-rapidapi-key: " . env('RAPIDAPI_KEY', '')
+            ];
 
-            $start = $CI->scrapingbot->scrapeInstagramPost($url);
-            if (empty($start['status']) || empty($start['responseId'])) {
+            $resp = $this->curlRequestWithRetry($api_url, $headers, function ($r) {
+                return !empty($r['status']) && $r['status'] === true && !empty($r['id']);
+            });
+
+            $resp_ok = !empty($resp['status']) && $resp['status'] === true && !empty($resp['id']);
+
+            if (!$resp_ok) {
                 $response["status"] = false;
-                $response["msg"] = $start['msg'] ?? "Gagal submit scraping Instagram";
-                $response["data"] = $defaultData;
+                $response["msg"] = "Response instagram tidak ditemukan";
+                $response["data"] = array();
                 return $response;
             }
 
-            $maxAttempts = 12;
-            $pollResult = null;
-            for ($i = 0; $i < $maxAttempts; $i++) {
-                $pollResult = $CI->scrapingbot->pollResult('instagramPost', $start['responseId']);
-                if (($pollResult['status'] ?? '') === 'success') {
-                    break;
-                }
-                if (($pollResult['status'] ?? '') === 'error') {
-                    $response["status"] = false;
-                    $response["msg"] = $pollResult['msg'] ?? "Scraping Instagram gagal";
-                    $response["data"] = $defaultData;
-                    return $response;
-                }
-                usleep(1500000);
+            $is_video = !empty($resp['is_video']);
+            $typename = strval($resp['__typename'] ?? '');
+
+            $media_type = 'photo';
+            if ($is_video) {
+                $media_type = 'video';
+            } else if ($typename === 'GraphSidecar') {
+                $media_type = 'sidecar';
             }
 
-            if (($pollResult['status'] ?? '') !== 'success') {
-                $response["status"] = false;
-                $response["msg"] = "Timeout menunggu hasil scraping Instagram";
-                $response["data"] = $defaultData;
-                return $response;
-            }
+            $comment_count = intval(
+                $resp['edge_media_to_parent_comment']['count']
+                    ?? ($resp['edge_media_preview_comment']['count']
+                        ?? ($resp['edge_media_to_comment']['count'] ?? 0))
+            );
+            $view_count = intval($resp['video_play_count'] ?? ($resp['video_view_count'] ?? 0));
 
-            $parsed = $this->parseInstagramPostResponse($pollResult['data'] ?? array());
             $response["status"] = true;
             $response["msg"] = "";
-            $response["data"]["like"] = intval($parsed['like'] ?? 0);
-            $response["data"]["share"] = intval($parsed['share'] ?? 0);
-            $response["data"]["comment"] = intval($parsed['comment'] ?? 0);
-            $response["data"]["collect"] = intval($parsed['collect'] ?? 0);
-            $response["data"]["view"] = intval($parsed['view'] ?? 0);
-            $response["data"]["created_at"] = strval($parsed['created_at'] ?? '');
+            $response["data"]["like"] = intval($resp['edge_media_preview_like']['count'] ?? 0);
+            $response["data"]["share"] = 0;
+            $response["data"]["comment"] = $comment_count;
+            $response["data"]["collect"] = 0;
+            $response["data"]["view"] = $view_count;
+            $response["data"]["content_id"] = strval($resp['id'] ?? ($resp['shortcode'] ?? ''));
+            $response["data"]["media_type"] = $media_type;
+            $response["data"]["cover"] = strval($resp['thumbnail_src'] ?? ($resp['display_url'] ?? ''));
+
+            if (intval($resp['taken_at_timestamp'] ?? 0) > 0) {
+                $response["data"]["created_at"] = date("Y-m-d", intval($resp['taken_at_timestamp']));
+            }
+
+            if ($fetch_media_assets) {
+                if ($media_type === 'video') {
+                    $response["data"]["video_link"] = strval($resp['video_url'] ?? '');
+                } else if ($media_type === 'sidecar') {
+                    $images = array();
+                    foreach (($resp['edge_sidecar_to_children']['edges'] ?? array()) as $child) {
+                        $cn = $child['node'] ?? array();
+                        if (!empty($cn['is_video']) && !empty($cn['video_url'])) {
+                            $images[] = (string)$cn['video_url'];
+                        } else if (!empty($cn['display_url'])) {
+                            $images[] = (string)$cn['display_url'];
+                        }
+                    }
+                    if (empty($images) && !empty($resp['display_url'])) {
+                        $images[] = (string)$resp['display_url'];
+                    }
+                    $response["data"]["images"] = $images;
+                    if (count($images) > 0) {
+                        $response["data"]["video_link"] = json_encode($images);
+                    } else if ($response["data"]["cover"] !== "") {
+                        $response["data"]["video_link"] = json_encode(array($response["data"]["cover"]));
+                    }
+                } else {
+                    $img = strval($resp['display_url'] ?? '');
+                    if ($img !== '') {
+                        $response["data"]["images"] = array($img);
+                        $response["data"]["video_link"] = json_encode(array($img));
+                    } else if ($response["data"]["cover"] !== "") {
+                        $response["data"]["video_link"] = json_encode(array($response["data"]["cover"]));
+                    }
+                }
+            }
         } else if ($type == "Threads") {
-            $defaultData = array(
-                'like' => 0,
-                'share' => 0,
-                'comment' => 0,
-                'collect' => 0,
-                'view' => 0,
-                'created_at' => '',
-            );
-
-            if (!$url) {
-                $response["status"] = false;
-                $response["msg"] = "URL tidak ditemukan";
-                $response["data"] = $defaultData;
-                return $response;
-            }
-
-            $CI =& get_instance();
-            $CI->load->library('scrapingbot');
-
-            $start = $CI->scrapingbot->scrapeThreadsPost($url);
-            if (empty($start['status']) || empty($start['responseId'])) {
-                $response["status"] = false;
-                $response["msg"] = $start['msg'] ?? "Gagal submit scraping Threads";
-                $response["data"] = $defaultData;
-                return $response;
-            }
-
-            $maxAttempts = 12;
-            $pollResult = null;
-            for ($i = 0; $i < $maxAttempts; $i++) {
-                $pollResult = $CI->scrapingbot->pollResult('threadsPost', $start['responseId']);
-                if (($pollResult['status'] ?? '') === 'success') {
-                    break;
-                }
-                if (($pollResult['status'] ?? '') === 'error') {
+            if ($url) {
+                if (empty($influencer_id)) {
                     $response["status"] = false;
-                    $response["msg"] = $pollResult['msg'] ?? "Scraping Threads gagal";
-                    $response["data"] = $defaultData;
+                    $response["msg"] = "influencer_id diperlukan untuk mengambil data Threads";
                     return $response;
                 }
-                usleep(1500000);
-            }
 
-            if (($pollResult['status'] ?? '') !== 'success') {
+                $metrics = $this->get_threads_metrics_from_official_api($url, $influencer_id);
+
+                if (!empty($metrics['error'])) {
+                    $response["status"] = false;
+                    $response["msg"] = $metrics['error'];
+                } else {
+                    $response["data"]["content_id"] = $metrics['thread_id'] ?? '';
+                    $response["data"]["view"] = intval($metrics['views'] ?? 0);
+                    $response["data"]["like"] = intval($metrics['likes'] ?? 0);
+                    $response["data"]["comment"] = intval($metrics['replies'] ?? 0);
+                    $response["data"]["share"] = intval($metrics['reposts'] ?? 0);
+                    $response["data"]["collect"] = intval($metrics['quotes'] ?? 0);
+                }
+            } else {
                 $response["status"] = false;
-                $response["msg"] = "Timeout menunggu hasil scraping Threads";
-                $response["data"] = $defaultData;
-                return $response;
+                $response["msg"] = "URL tidak ditemukan";
             }
-
-            $parsed = $this->parseThreadsPostResponse($pollResult['data'] ?? array());
-            $response["status"] = true;
-            $response["msg"] = "";
-            $response["data"]["like"] = intval($parsed['like'] ?? 0);
-            $response["data"]["share"] = intval($parsed['share'] ?? 0);
-            $response["data"]["comment"] = intval($parsed['comment'] ?? 0);
-            $response["data"]["collect"] = intval($parsed['collect'] ?? 0);
-            $response["data"]["view"] = intval($parsed['view'] ?? 0);
-            $response["data"]["created_at"] = strval($parsed['created_at'] ?? '');
+        } else if ($type == "Youtube") {
+            if ($url) {
+                $youtube = $this->get_youtube_video_metrics_from_public_api($url);
+                if (!$youtube['status']) {
+                    $response["status"] = false;
+                    $response["msg"] = $youtube['msg'];
+                    $response["data"] = array();
+                } else {
+                    $response["data"] = array_merge($response["data"], $youtube['data']);
+                }
+            } else {
+                $response["status"] = false;
+                $response["msg"] = "URL tidak ditemukan";
+            }
         } else {
             $response["status"] = false;
             $response["msg"] = "Platform belum tersedia";
