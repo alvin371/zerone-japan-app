@@ -1194,6 +1194,17 @@ if (!$_SESSION['is_login']) {
                       </div>
                   </div>
               </div>
+
+              <?php if (!empty($modules_permissions['endorse_campaign'])): ?>
+              <div style="position: relative; margin-right: 10px;">
+                  <a href="<?= base_url('endorse/queue') ?>" class="p-0 d-inline-flex align-items-center justify-content-center" title="Antrian Refresh" style="position: relative; background-color: transparent; border: none; text-decoration: none;">
+                      <i class="bi bi-list-task" id="queueShortcutIcon" style="font-size: 21px; color: #5a7dbaff;"></i>
+                      <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-warning text-dark" id="queueBadge" style="display: none; font-size: 10px; padding: 3px 5px;">
+                          0
+                      </span>
+                  </a>
+              </div>
+              <?php endif; ?>
                                         
               <!-- Profile Dropdown -->
               <div class="dropdown">
@@ -1574,6 +1585,48 @@ if (!$_SESSION['is_login']) {
         }
     }
 
+    function updateQueueBadge(count, stalled) {
+        const badge = $('#queueBadge');
+        const icon = $('#queueShortcutIcon');
+
+        if (!badge.length || !icon.length) {
+            return;
+        }
+
+        if (count > 0) {
+            badge.text(count > 99 ? '99+' : count);
+            badge.css('display', 'flex');
+        } else {
+            badge.hide();
+        }
+
+        if (stalled) {
+            icon.css('color', '#dc3545');
+        } else if (count > 0) {
+            icon.css('color', '#f59f00');
+        } else {
+            icon.css('color', '#5a7dbaff');
+        }
+    }
+
+    function loadQueueCount() {
+        if (!$('#queueBadge').length) {
+            return;
+        }
+
+        $.ajax({
+            url: '<?= base_url("endorse/queue-count") ?>',
+            method: 'GET',
+            dataType: 'json',
+            success: function(data) {
+                updateQueueBadge(parseInt(data.count || 0, 10), !!data.stalled);
+            },
+            error: function(xhr, status, error) {
+                console.error('Error loading queue count:', error);
+            }
+        });
+    }
+
     async function markRead(notificationId) {
       try {
           const response = await $.ajax({
@@ -1645,6 +1698,8 @@ if (!$_SESSION['is_login']) {
                 console.error('Error loading notification count:', error);
             }
         });
+
+        loadQueueCount();
     });
 
     setInterval(function() {
@@ -1665,6 +1720,8 @@ if (!$_SESSION['is_login']) {
               console.error('Error auto-refreshing notification count:', error);
           }
       });
+
+      loadQueueCount();
     }, 30000);
   </script>
   <script>
