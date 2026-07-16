@@ -1245,8 +1245,8 @@ class Endorse extends BaseController
         $yesterday = DATE('Y-m-d', strtotime($today . " -1 days"));
 
         $qry = "";
-        $mode = $_GET['mode'] ?? '';
-        $ids = $_GET['ids'] ?? '';
+        $mode = $_GET['mode'];
+        $ids = $_GET['ids'];
         if ($mode == "refresh_data") {
             $qry = " AND a.id IN ($ids) ";
             $id = $_GET['id_campaign'];
@@ -1261,35 +1261,17 @@ class Endorse extends BaseController
         $qry
         ");
 
-        $syncedTiktok = 0;
-        $queuedNonTiktok = 0;
-        $failedQueue = 0;
-        $failedTiktok = 0;
-        $queueErrors = array();
-
         foreach ($data as $k => $v) {
-            $platform = strtolower(trim((string)($v['platform'] ?? '')));
-            if ($platform !== 'tiktok') {
-                $queue = $this->template->enqueue_post_scrape('endorse', intval($v['id']), strval($v['platform'] ?? ''), strval($v['link_upload'] ?? ''), 10);
-                if (!empty($queue['status'])) {
-                    $queuedNonTiktok++;
-                } else {
-                    $failedQueue++;
-                    $queueErrors[] = "ID {$v['id']}: " . ($queue['msg'] ?? 'Gagal enqueue');
-                }
-                continue;
-            }
-
             $id_endorse = $v['id'];
             $query = $this->mymodel->selectWithQuery("SELECT id
             FROM endorse_logs
             WHERE id_endorse = '$id_endorse' AND date = '$today' ");
-            $query = $query[0] ?? array();
+            $query = $query[0];
 
             $query_yesterday = $this->mymodel->selectWithQuery("SELECT * 
             FROM endorse_logs
             WHERE id_endorse = '$id_endorse' AND date < '$today' AND views_after > 0 ORDER BY date DESC LIMIT 1 ");
-            $query_yesterday = $query_yesterday[0] ?? array();
+            $query_yesterday = $query_yesterday[0];
 
             $dt = array();
 
@@ -1301,18 +1283,24 @@ class Endorse extends BaseController
             $dt['influencer'] = strval($v['influencer']);
             $dt['date'] = $today;
 
+            $platform_is_tiktok = strtolower(strval($v['platform'])) === 'tiktok';
+            $current_content_id = $this->template->extract_tiktok_content_id($v['link_upload']);
             $stored_content_id = strval($v['tiktok_content_id'] ?? '');
-            $stored_media_type = strval($v['tiktok_media_type'] ?? '');
+            $stored_media_type = strtolower(strval($v['tiktok_media_type'] ?? ''));
             $stored_cover = strval($v['tiktok_cover'] ?? '');
             $stored_content_link = strval($v['tiktok_content_link'] ?? '');
-            $response = $this->template->get_social_media($v['platform'], $v['link_upload'], true, $v['influencer']);
-            if (empty($response['status'])) {
-                $failedTiktok++;
-                $queueErrors[] = "ID {$v['id']}: " . ($response['msg'] ?? 'Gagal mengambil data TikTok');
-                continue;
+            $need_asset_refresh = false;
+            if ($platform_is_tiktok) {
+                $need_asset_refresh =
+                    $stored_content_id === '' ||
+                    $stored_media_type === '' ||
+                    $stored_cover === '' ||
+                    $stored_content_link === '' ||
+                    ($current_content_id !== '' && $stored_content_id !== $current_content_id);
             }
 
-            $syncedTiktok++;
+            $fetch_media_assets = $platform_is_tiktok;
+            $response = $this->template->get_social_media($v['platform'], $v['link_upload'], $fetch_media_assets, $v['influencer']);
             $tiktok_content_id = strval($response['data']['content_id'] ?? $stored_content_id);
             $tiktok_media_type = strval($response['data']['media_type'] ?? $stored_media_type);
             $tiktok_cover = strval($response['data']['cover'] ?? $stored_cover);
@@ -1323,30 +1311,31 @@ class Endorse extends BaseController
             $dt['share_save'] = intval($query_yesterday['share_save_after']);
             $dt['views'] = intval($query_yesterday['views_after']);
 
-            $dt['likes'] = intval($response['data']['like'] ?? 0);
-            $dt['comment'] = intval($response['data']['comment'] ?? 0);
-            $dt['share_save'] = doubleval($response['data']['share'] ?? 0) + doubleval($response['data']['collect'] ?? 0);
-            $dt['views'] = intval($response['data']['view'] ?? 0);
+            if ($response['data']['view'] > 0) {
+                $dt['likes'] = $response['data']['like'];
+                $dt['comment'] = $response['data']['comment'];
+                $dt['share_save'] = doubleval($response['data']['share']) + doubleval($response['data']['collect']);
+                $dt['views'] = $response['data']['view'];
+            }
 
-
-            if ($dt['views'] >= 50000) {
+            if ($dt['views'] >= $this->fyp_views) {
                 $id_influencer = $v['influencer'];
                 $creator = $this->mymodel->selectWithQuery("SELECT follower
                     FROM influencer WHERE id = '$id_influencer'");
-                $creator = $creator[0];
-                $percentage = 0;
-                $follower = intval($creator['follower']);
+                $creator = $creator ? $creator[0] : array();
+                $follower = isset($creator['follower']) ? intval($creator['follower']) : 0;
                 if ($follower > 0) {
-                    $batas = intval($follower * 30 / 100);
+                    $batas = intval($follower * $this->fyp_percentage / 100);
                     if ($dt['views'] >= $batas) {
                         $dt['is_fyp'] = "1";
                     }
-                } else {
-                    $dt['is_fyp'] = "1";
                 }
             }
             $is_fyp_content = (isset($dt['is_fyp']) && strval($dt['is_fyp']) === '1') || intval($v['is_fyp'] ?? 0) === 1;
-            if ($is_fyp_content) {
+            if ($platform_is_tiktok && $is_fyp_content) {
+                if ($tiktok_cover === '') {
+                    $tiktok_cover = $stored_cover;
+                }
                 $tiktok_cover = $this->download_tiktok_fyp_asset($tiktok_cover, $id_endorse, 'cover');
             }
             if ($v['total_cost'] > 0 && $dt['views'] > 0) {
@@ -1358,11 +1347,13 @@ class Endorse extends BaseController
             unset($dtt['id_endorse']);
             unset($dtt['id_campaign']);
             unset($dtt['date']);
-            $dtt['tiktok_content_id'] = $tiktok_content_id;
-            $dtt['tiktok_media_type'] = $tiktok_media_type;
-            $dtt['tiktok_cover'] = $tiktok_cover;
-            $dtt['tiktok_content_link'] = $tiktok_content_link;
-            $dtt['tiktok_fetched_at'] = DATE("Y-m-d H:i:s");
+            if ($platform_is_tiktok) {
+                $dtt['tiktok_content_id'] = $tiktok_content_id;
+                $dtt['tiktok_media_type'] = $tiktok_media_type;
+                $dtt['tiktok_cover'] = $tiktok_cover;
+                $dtt['tiktok_content_link'] = $tiktok_content_link;
+                $dtt['tiktok_fetched_at'] = DATE("Y-m-d H:i:s");
+            }
             $dtt['updated_at'] = DATE("Y-m-d H:i:s");
 
             $this->db->update('endorse', $dtt, array('id' => $id_endorse));
@@ -1375,11 +1366,13 @@ class Endorse extends BaseController
             $dtt['share_save'] = doubleval($dt['share_save']);
             $dtt['views'] = doubleval($dt['views']);
             $dtt['cpm'] = doubleval($dt['cpm']);
-            $dtt['tiktok_content_id'] = $tiktok_content_id;
-            $dtt['tiktok_media_type'] = $tiktok_media_type;
-            $dtt['tiktok_cover'] = $tiktok_cover;
-            $dtt['tiktok_content_link'] = $tiktok_content_link;
-            $dtt['tiktok_fetched_at'] = DATE("Y-m-d H:i:s");
+            if ($platform_is_tiktok) {
+                $dtt['tiktok_content_id'] = $tiktok_content_id;
+                $dtt['tiktok_media_type'] = $tiktok_media_type;
+                $dtt['tiktok_cover'] = $tiktok_cover;
+                $dtt['tiktok_content_link'] = $tiktok_content_link;
+                $dtt['tiktok_fetched_at'] = DATE("Y-m-d H:i:s");
+            }
 
             $dt['total_cost'] = doubleval($v['total_cost']);
 
@@ -1433,6 +1426,11 @@ class Endorse extends BaseController
             unset($dt['is_fyp']);
             unset($dt['posting_at']);
             unset($dt['sync_at']);
+            unset($dt['tiktok_content_id']);
+            unset($dt['tiktok_media_type']);
+            unset($dt['tiktok_cover']);
+            unset($dt['tiktok_content_link']);
+            unset($dt['tiktok_fetched_at']);
 
             if ($query) {
                 $dt['updated_at'] = DATE("Y-m-d H:i:s");
@@ -1465,10 +1463,7 @@ class Endorse extends BaseController
             $id_parent = $v['id'];
             $this->update_endorse_parent($id_parent);
         }
-        $msg = "Refresh data selesai. TikTok berhasil: {$syncedTiktok}, TikTok gagal: {$failedTiktok}, Queue Instagram/Threads/Facebook: {$queuedNonTiktok}, Gagal enqueue: {$failedQueue}.";
-        if (!empty($queueErrors)) {
-            $msg .= "<br>Detail: " . implode('<br>', $queueErrors);
-        }
+        $msg = 'Refresh data berhasil!';
         echo $this->template->alert_success($msg);
     }
     function update_endorse_parent($id_parent)
@@ -1680,48 +1675,30 @@ class Endorse extends BaseController
 
         $v = $query[0];
         $detail = $query[0];
-        $platform = strtolower(trim((string)($v['platform'] ?? '')));
-        if ($platform !== 'tiktok') {
-            $queue = $this->template->enqueue_post_scrape('endorse', intval($id), strval($v['platform'] ?? ''), strval($v['link_upload'] ?? ''), 10);
-            if (!empty($queue['status'])) {
-                $this->db->update('endorse', [
-                    'sync_at' => DATE("Y-m-d H:i:s"),
-                    'updated_at' => DATE("Y-m-d H:i:s"),
-                    'updated_by' => strval($user['id']),
-                ], ['id' => $id]);
-                echo $this->template->alert_success("Data eksternal Instagram/Threads/Facebook sedang diproses via queue. Hasil akan terupdate otomatis oleh cronjob.");
-            } else {
-                echo $this->template->alert_danger($queue['msg'] ?? 'Gagal menambahkan data ke queue scraping');
-            }
-            return;
-        }
-
+        $platform_is_tiktok = strtolower(strval($v['platform'])) === 'tiktok';
+        $current_content_id = $this->template->extract_tiktok_content_id($v['link_upload']);
         $stored_content_id = strval($v['tiktok_content_id'] ?? '');
-        $stored_media_type = strval($v['tiktok_media_type'] ?? '');
+        $stored_media_type = strtolower(strval($v['tiktok_media_type'] ?? ''));
         $stored_cover = strval($v['tiktok_cover'] ?? '');
         $stored_content_link = strval($v['tiktok_content_link'] ?? '');
-        $response = $this->template->get_social_media($v['platform'], $v['link_upload'], true, $v['influencer']);
-        if (empty($response['status'])) {
-            $this->template->log_endpoint_trace('endorse_tiktok_sync_failure', array(
-                'endorse_id' => intval($id),
-                'campaign_id' => intval($v['id_campaign'] ?? 0),
-                'failure_code' => strval($response['code'] ?? 'provider_unavailable'),
-            ));
-            echo $this->template->alert_danger($response['msg'] ?? 'Gagal mengambil data TikTok');
-            return;
+        $need_asset_refresh = false;
+        if ($platform_is_tiktok) {
+            $need_asset_refresh =
+                $stored_content_id === '' ||
+                $stored_media_type === '' ||
+                $stored_cover === '' ||
+                $stored_content_link === '' ||
+                ($current_content_id !== '' && $stored_content_id !== $current_content_id);
         }
 
-        $tiktok_content_id = strval($response['data']['content_id'] ?? $stored_content_id);
-        $tiktok_media_type = strval($response['data']['media_type'] ?? $stored_media_type);
-        $tiktok_cover = strval($response['data']['cover'] ?? $stored_cover);
-        $tiktok_content_link = strval($response['data']['video_link'] ?? $stored_content_link);
+        $response = $this->template->get_social_media($v['platform'], $v['link_upload'], $need_asset_refresh, $v['influencer']);
 
         $id_endorse = $v['id'];
         $today = DATE("Y-m-d");
         $query_yesterday = $this->mymodel->selectWithQuery("SELECT * 
         FROM endorse_logs
         WHERE id_endorse = '$id_endorse' AND date < '$today' AND views_after > 0 ORDER BY date DESC LIMIT 1");
-        $query_yesterday = $query_yesterday[0] ?? array();
+        $query_yesterday = $query_yesterday[0];
 
 
         $dt = array();
@@ -1729,6 +1706,13 @@ class Endorse extends BaseController
         $dt['status'] = strval($v['status']);
         $dt['status_campaign'] = strval($v['status_campaign']);
         $dt['sync_at'] = DATE("Y-m-d H:i:s");
+        if ($need_asset_refresh) {
+            $dt['tiktok_content_id'] = strval($response['data']['content_id'] ?? '');
+            $dt['tiktok_media_type'] = strval($response['data']['media_type'] ?? '');
+            $dt['tiktok_cover'] = strval($response['data']['cover'] ?? '');
+            $dt['tiktok_content_link'] = strval($response['data']['video_link'] ?? '');
+            $dt['tiktok_fetched_at'] = DATE("Y-m-d H:i:s");
+        }
 
         if ($response['data']['created_at']) {
             $dt['posting_at'] = $response['data']['created_at'];
@@ -1751,13 +1735,11 @@ class Endorse extends BaseController
         $dt['share_save'] = doubleval($response['data']['share']) + doubleval($response['data']['collect']);
         $dt['views'] = $response['data']['view'];
 
-
         if ($dt['views'] >= 50000) {
-            $id_influencer = $detail['influencer'];
+            $id_influencer = $v['influencer'];
             $creator = $this->mymodel->selectWithQuery("SELECT follower
-                    FROM influencer WHERE id = '$id_influencer'");
+                FROM influencer WHERE id = '$id_influencer'");
             $creator = $creator[0];
-            $percentage = 0;
             $follower = intval($creator['follower']);
             if ($follower > 0) {
                 $batas = intval($follower * 30 / 100);
@@ -1770,8 +1752,11 @@ class Endorse extends BaseController
         }
 
         $is_fyp_content = (isset($dt['is_fyp']) && strval($dt['is_fyp']) === '1') || intval($v['is_fyp'] ?? 0) === 1;
-        if ($is_fyp_content) {
-            $tiktok_cover = $this->download_tiktok_fyp_asset($tiktok_cover, $id, 'cover');
+        if ($platform_is_tiktok && $is_fyp_content) {
+            if (!isset($dt['tiktok_cover']) || trim((string)$dt['tiktok_cover']) === '') {
+                $dt['tiktok_cover'] = strval($v['tiktok_cover'] ?? '');
+            }
+            $dt['tiktok_cover'] = $this->download_tiktok_fyp_asset($dt['tiktok_cover'], $id_endorse, 'cover');
         }
 
         if ($v['total_cost'] > 0 && $dt['views'] > 0) {
@@ -1779,11 +1764,6 @@ class Endorse extends BaseController
         } else {
             $dt['cpm'] = 0;
         }
-        $dt['tiktok_content_id'] = $tiktok_content_id;
-        $dt['tiktok_media_type'] = $tiktok_media_type;
-        $dt['tiktok_cover'] = $tiktok_cover;
-        $dt['tiktok_content_link'] = $tiktok_content_link;
-        $dt['tiktok_fetched_at'] = DATE("Y-m-d H:i:s");
         $dt['updated_at'] = DATE("Y-m-d H:i:s");
 
         if ($this->db->update('endorse', $dt, array('id' => $id))) {
@@ -1880,7 +1860,7 @@ class Endorse extends BaseController
             }
 
             $id_parent = $detail['id_campaign'];
-            $this->update_endorse_parent($id_parent);
+                $this->update_endorse_parent($id_parent);
         }
 
         if ($response['status'] == true) {
