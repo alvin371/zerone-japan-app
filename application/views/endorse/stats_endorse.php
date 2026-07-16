@@ -76,6 +76,9 @@ if ($_GET['type'] == "Yearly") {
 </div>
 
 <a href="<?= base_url() ?>endorse?id_campaign=<?= $detail['id'] ?>" class="btn btn-primary mt-0 mb-2"><i class="bi bi-chevron-double-left fs-16"></i> Kembali</a>
+<a href="#!" onclick="refresh_data('<?= $detail['id'] ?>')" class="btn btn-edit-active mt-0 ms-1 mb-2"><i class="bi bi-arrow-repeat fs-16"></i> Refresh Terpilih</a>
+<a href="#!" onclick="sync_all('<?= $detail['id'] ?>')" class="btn btn-sync mt-0 ms-1 mb-2"><i class="bi bi-bootstrap-reboot fs-16"></i> Refresh Semua</a>
+<a href="<?= base_url() ?>endorse/queue?id_campaign=<?= $detail['id'] ?>" class="btn btn-outline-secondary mt-0 ms-1 mb-2"><i class="bi bi-list-check fs-16"></i> Antrian Refresh</a>
 <?= $notif ?>
 
 

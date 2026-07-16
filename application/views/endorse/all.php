@@ -251,7 +251,8 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
                             <input type="hidden" name="keyword_category" value="<?= $keyword_category ?>">
                             <input type="text" name="keyword" class="form-control me-2" value="<?= $_GET['keyword'] ?>" style="border-top-left-radius: 0px !important;
                             border-bottom-left-radius: 0px !important;width:140px!important">
-                            <!-- <a href="#!" onclick="sync_all('<?= $detail['id'] ?>')" class="btn btn-sync mt-0 ms-1"><i class="bi bi-bootstrap-reboot fs-16"></i> Refresh Semua</a> -->
+                            <a href="#!" onclick="sync_all('<?= $detail['id'] ?>')" class="btn btn-sync mt-0 ms-1"><i class="bi bi-bootstrap-reboot fs-16"></i> Refresh Semua</a>
+                            <a href="<?= base_url() ?>endorse/queue?id_campaign=<?= $detail['id'] ?>" class="btn btn-outline-secondary mt-0 ms-1"><i class="bi bi-list-check fs-16"></i> Antrian Refresh</a>
 
                         </div>
                     </div>

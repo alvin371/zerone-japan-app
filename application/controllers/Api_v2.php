@@ -6348,6 +6348,115 @@ class Api_v2 extends CI_Controller
         echo json_encode($html, true);
         die;
     }
+
+    function cronjob_endorse_refresh_enqueue_all()
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        $this->load->library('EndorseRefreshQueueService');
+        $result = $this->endorserefreshqueueservice->enqueueAllActive(0);
+
+        echo json_encode($result);
+        die;
+    }
+
+    function cronjob_endorse_refresh()
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        @set_time_limit(55);
+
+        $this->load->model('mymodel');
+        $this->load->library('template');
+        $this->load->library('endorse_sync');
+        $this->load->library('EndorseRefreshQueueService');
+
+        $envValue = function ($key, $default = null) {
+            $value = getenv($key);
+            return ($value === false || $value === '') ? $default : $value;
+        };
+
+        $force = ($this->input->get_post('force') === '1');
+        $parallel = intval($envValue('ENDORSE_REFRESH_PARALLEL_HTTP', 10));
+        if ($parallel < 1) {
+            $parallel = 1;
+        } elseif ($parallel > 20) {
+            $parallel = 20;
+        }
+
+        $deadline = floatval($envValue('ENDORSE_REFRESH_DEADLINE_SEC', 45));
+        if ($deadline <= 0) {
+            $deadline = 45.0;
+        }
+
+        $limit = $force
+            ? intval($envValue('ENDORSE_REFRESH_FORCE_BATCH', 250))
+            : intval($envValue('ENDORSE_REFRESH_BATCH_SIZE', 40));
+        if ($limit <= 0) {
+            $limit = $force ? 250 : 40;
+        }
+
+        $claim = $this->endorserefreshqueueservice->claimBatch([
+            'limit' => $limit,
+            'force' => $force,
+            'stale_minutes' => 5,
+        ]);
+
+        if (!empty($claim['skipped'])) {
+            $skip = $claim['skipped'];
+            echo json_encode([
+                'status' => true,
+                'processed' => 0,
+                'used' => $skip['used'] ?? null,
+                'cap' => $skip['cap'] ?? null,
+                'msg' => $skip['msg'] ?? 'Skipped',
+            ]);
+            die;
+        }
+
+        $items = $claim['items'] ?? [];
+        $worker_id = $claim['worker_id'] ?? '';
+
+        if (empty($items)) {
+            echo json_encode([
+                'status' => true,
+                'worker' => $worker_id,
+                'processed' => 0,
+                'msg' => 'No pending endorse refresh items',
+            ]);
+            die;
+        }
+
+        $tasks = [];
+        foreach ($items as $i => $item) {
+            $tasks[$i] = [
+                'platform' => $item['platform'],
+                'url' => $item['url'],
+                'rescue_lane' => !empty($item['rescue_lane']),
+                'timeout_sec' => intval($item['timeout_sec'] ?? 0),
+                'hd' => intval($item['hd'] ?? 0),
+            ];
+        }
+
+        $responses = $this->template->get_social_media_batch($tasks, $parallel, $deadline);
+        $summary = $this->endorserefreshqueueservice->applyResults($items, $responses);
+
+        echo json_encode([
+            'status' => true,
+            'worker' => $worker_id,
+            'processed' => intval($summary['processed'] ?? 0),
+            'completed' => intval($summary['completed'] ?? 0),
+            'failed' => intval($summary['failed'] ?? 0),
+            'retrying' => intval($summary['retrying'] ?? 0),
+            'deferred' => intval($summary['deferred'] ?? 0),
+            'msg' => intval($summary['processed'] ?? 0) . ' items: '
+                . intval($summary['completed'] ?? 0) . ' ok, '
+                . intval($summary['failed'] ?? 0) . ' failed, '
+                . intval($summary['retrying'] ?? 0) . ' retrying, '
+                . intval($summary['deferred'] ?? 0) . ' deferred',
+        ]);
+        die;
+    }
+
     public function webhook()
     {
         date_default_timezone_set('Asia/Jakarta');

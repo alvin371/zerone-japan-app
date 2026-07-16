@@ -62,8 +62,32 @@ foreach ($data as $v) {
                 <?php } ?>
             </div>
             <div class="col-lg-4 text-lg-end text-start">
+                <?php
+                $refresh = isset($card_refresh_meta[$v['id']]) ? $card_refresh_meta[$v['id']] : [];
+                $pending_count = intval($refresh['pending_count'] ?? 0);
+                $processing_count = intval($refresh['processing_count'] ?? 0);
+                $active_refresh_count = $pending_count + $processing_count;
+                $last_child_sync_at = $refresh['last_child_sync_at'] ?? null;
+                ?>
                 <a href="#!" onclick="remove('<?= $v['id'] ?>')" class="btn btn-delete  mt-0 mb-2"><i class="bi bi-trash fs-16"></i> Delete Data</a>
                 <a href="#!" onclick="edit('<?= $v['id'] ?>')" class="btn btn-edit  mt-0 ms-1 mb-2"><i class="bi bi-pencil-square fs-16"></i> Edit Data</a>
+                <a href="#!" onclick="refreshCampaign('<?= $v['id'] ?>')"
+                   class="btn btn-outline-secondary mt-0 ms-1 mb-2"
+                   id="refresh-btn-<?= $v['id'] ?>">
+                   <i class="bi bi-arrow-clockwise fs-16"></i> Refresh
+                </a>
+                <small class="text-muted d-block mt-0" id="sync-time-<?= $v['id'] ?>">
+                    <?php if ($active_refresh_count > 0) { ?>
+                        Refresh queue: <?= $pending_count ?> pending, <?= $processing_count ?> processing
+                    <?php } else { ?>
+                        Update konten: <?= $last_child_sync_at ? date('d/m/Y H:i', strtotime($last_child_sync_at)) : 'Belum' ?>
+                    <?php } ?>
+                </small>
+                <?php if ($active_refresh_count > 0) { ?>
+                    <small class="d-block mt-1">
+                        <a href="<?= base_url() ?>endorse/queue?id_campaign=<?= $v['id'] ?>" class="text-decoration-none">Lihat antrian refresh</a>
+                    </small>
+                <?php } ?>
             </div>
             <div class="col-lg-12">
                 <hr>
@@ -86,24 +110,10 @@ foreach ($data as $v) {
                     </div>
                     <div class="col-md-4">
                         <?php
-                        $id = $v['id'];
-                        $dat = $this->mymodel->selectWithQuery("SELECT COUNT(id) as count
-                        FROM endorse
-                        WHERE id_campaign = '$id'");
-                        $a = $dat[0]['count'];
-                        $dat = $this->mymodel->selectWithQuery("SELECT COUNT(id) as count
-                        FROM endorse
-                        WHERE id_campaign = '$id'
-                        AND status_endorse = 'Posted Content'
-                        ");
-                        $b = $dat[0]['count'];
-                        $dat = $this->mymodel->selectWithQuery("SELECT COUNT(id) as count
-                        FROM endorse
-                        WHERE id_campaign = '$id'
-                        AND status_endorse = 'Reject'
-                        ");
-                        $c = $dat[0]['count'];
-
+                        $stats = isset($card_stats[$v['id']]) ? $card_stats[$v['id']] : [];
+                        $a = isset($stats['total_pengajuan']) ? intval($stats['total_pengajuan']) : 0;
+                        $b = isset($stats['posted_count']) ? intval($stats['posted_count']) : 0;
+                        $c = isset($stats['reject_count']) ? intval($stats['reject_count']) : 0;
                         ?>
                         <p class="mb-1 text-black">Total Pengajuan Post : <?= separator_only($a) ?></p>
                         <p class="mb-1 text-black">Posted : <?= separator_only($b) ?></p>
