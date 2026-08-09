@@ -22,6 +22,8 @@ class Endorse extends BaseController
             'remove' => 'delete',
             'action' => 'edit',
             'bulk_refresh' => 'edit',
+            'bulk_refresh_v2' => 'edit',
+            'manual_override_v2' => 'edit',
             'sync_all_process' => 'edit',
             'force_retry' => 'edit',
             'queue' => 'view',
@@ -1533,6 +1535,32 @@ class Endorse extends BaseController
         );
     }
 
+    /** V2 is deliberately a separate POST-only endpoint during the route transition. */
+    public function bulk_refresh_v2()
+    {
+        if (strtoupper($this->input->method(true)) !== 'POST') {
+            return $this->output->set_status_header(405)->set_content_type('application/json')->set_output(json_encode(['status'=>false,'msg'=>'POST required']));
+        }
+        $this->load->library(['endorsev2runtime','endorsev2queue']);
+        if (!$this->endorsev2runtime->canEnqueue()) {
+            return $this->output->set_status_header(503)->set_content_type('application/json')->set_output(json_encode(['status'=>false,'msg'=>'Endorse V2 is disabled']));
+        }
+        $campaignId=(int)$this->input->post('id_campaign'); $raw=trim((string)$this->input->post('ids')); $ids=$raw===''?[]:array_filter(array_map('intval',explode(',',$raw)));
+        if ($campaignId<=0) return $this->output->set_status_header(422)->set_content_type('application/json')->set_output(json_encode(['status'=>false,'msg'=>'id_campaign is required']));
+        if (!$ids) $ids=array_map('intval',array_column($this->db->select('id')->where(['id_campaign'=>$campaignId,'status'=>'Aktif'])->where("link_upload <> ''",null,false)->get('endorse')->result_array(),'id'));
+        $userId=(int)($_SESSION['user']['id']??0); $enqueued=0;$duplicates=0;$errors=[];
+        foreach($ids as $id){$r=$this->endorsev2queue->enqueue($id,$userId); if(!empty($r['status'])){if(!empty($r['duplicate']))$duplicates++;else $enqueued++;}else $errors[$id]=$r['code']??'failed';}
+        return $this->output->set_content_type('application/json')->set_output(json_encode(['status'=>empty($errors),'enqueued'=>$enqueued,'duplicates'=>$duplicates,'errors'=>$errors]));
+    }
+
+    public function manual_override_v2()
+    {
+        if (strtoupper($this->input->method(true)) !== 'POST') return $this->output->set_status_header(405)->set_output(json_encode(['status'=>false,'msg'=>'POST required']));
+        $this->load->library('endorsev2manualoverride');
+        $result=$this->endorsev2manualoverride->set((int)$this->input->post('endorse_id'),(string)$this->input->post('metric'),(int)$this->input->post('value'),(string)$this->input->post('reason'),(int)($_SESSION['user']['id']??0));
+        return $this->output->set_content_type('application/json')->set_output(json_encode($result));
+    }
+
     private function respond_bulk_refresh($is_alert, $ok, $msg, $enqueued, $skipped, $extra)
     {
         if ($is_alert) {
@@ -1920,6 +1948,10 @@ class Endorse extends BaseController
         }
 
         if ($this->db->update('endorse', $dt, array('id' => $id))) {
+
+            // V2 generation changes only for social identity changes, never creator/campaign metadata edits.
+            $this->load->library('endorsev2state');
+            $this->endorsev2state->afterEndorseUpdate((array) $old_data, array_merge((array) $old_data, (array) $dt));
 
             $id_parent = $id_campaign;
             $this->update_endorse_parent($id_parent);
@@ -2421,6 +2453,14 @@ class Endorse extends BaseController
         if (empty($id) || empty($id_campaign) || empty($nama_creator)) {
             echo $this->template->alert_danger('Parameter tidak lengkap!');
             return;
+        }
+
+        // V2 is audit-retentive: legacy deletion remains unchanged, sidecar history is retained and jobs are cancelled.
+        $this->load->library('endorsev2runtime');
+        if ($this->endorsev2runtime->canEnqueue() && $this->db->table_exists('endorse_v2_content_state')) {
+            $now = gmdate('Y-m-d H:i:s') . '.000000';
+            $this->db->update('endorse_v2_content_state', ['deleted_at' => $now, 'updated_at' => $now], ['endorse_id' => (int) $id]);
+            $this->db->query("UPDATE endorse_v2_refresh_jobs SET status='cancelled', completed_at=?, error_class='deleted', error_message='Endorse deleted', active_attempt_id=NULL, lease_expires_at=NULL, updated_at=? WHERE endorse_id=? AND status IN ('pending','retry_scheduled','processing')", [$now, $now, (int) $id]);
         }
 
         $this->db->delete('endorse_logs', array('id_endorse' => $id));

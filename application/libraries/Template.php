@@ -1980,6 +1980,11 @@ class Template
     function process_endorse_post_result($queueItem, $resultData)
     {
         $CI =& get_instance();
+        $CI->load->library('endorsev2runtime');
+        if (!$CI->endorsev2runtime->legacyWritesAllowed()) {
+            log_message('error', 'Endorse V2 rejected a legacy scraper-result writer invocation.');
+            return false;
+        }
 
         $endorseId = intval($queueItem['entity_id'] ?? 0);
         if ($endorseId <= 0) {

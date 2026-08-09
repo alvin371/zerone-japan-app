@@ -85,6 +85,11 @@ class Endorse_sync
 
     public function apply(array $endorse, array $response, int $user_id, ?array $prev_stats = null): array
     {
+        $this->CI->load->library('endorsev2runtime');
+        if (!$this->CI->endorsev2runtime->legacyWritesAllowed()) {
+            log_message('error', 'Endorse V2 rejected a legacy Endorse_sync writer invocation.');
+            return ['status' => false, 'error_class' => self::ERR_CONFIG, 'msg' => 'Legacy Endorse writer is disabled during V2 mode.'];
+        }
         $classification = $this->classify_response(
             $response,
             strval($endorse['platform'] ?? ''),
