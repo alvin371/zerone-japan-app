@@ -189,7 +189,10 @@ class Migrate extends CI_Controller
             $statements = $this->_parse_sql_statements($sql);
             foreach ($statements as $statement) {
                 if (!empty(trim($statement))) {
-                    $this->db->query($statement);
+                    if ($this->db->query($statement) === false) {
+                        $error = $this->db->error();
+                        throw new RuntimeException('Statement failed: ' . ($error['message'] ?? 'unknown database error'));
+                    }
                 }
             }
 
@@ -294,6 +297,7 @@ class Migrate extends CI_Controller
         $sql = file_get_contents($file);
 
         if (empty(trim($sql))) {
+            log_message('error', 'Migration ' . $name . ' failed: ' . $e->getMessage());
             return [
                 'name' => $name,
                 'status' => 'error',

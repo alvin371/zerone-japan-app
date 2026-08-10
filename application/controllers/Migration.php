@@ -61,7 +61,10 @@ class Migration extends CI_Controller
                 if ($statement === '') {
                     continue;
                 }
-                $this->db->query($statement);
+                if ($this->db->query($statement) === false) {
+                    $error = $this->db->error();
+                    throw new RuntimeException('Statement failed: ' . ($error['message'] ?? 'unknown database error'));
+                }
             }
 
             if ($this->db->trans_status() === false) {
