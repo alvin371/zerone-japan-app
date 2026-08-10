@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS endorse_v2_metric_observations (
   observed_at DATETIME(6) NOT NULL,
   observation_time_source ENUM('provider','worker_received','legacy_import','manual_override') NOT NULL,
   observation_kind ENUM('provider','manual_override','legacy_import') NOT NULL,
+  is_baseline TINYINT(1) NOT NULL DEFAULT 0,
+  baseline_reason ENUM('first_generation_observation','legacy_import_anchor') NULL,
   views_before BIGINT UNSIGNED NULL,
   views_after BIGINT UNSIGNED NULL,
   likes_before BIGINT UNSIGNED NULL,
