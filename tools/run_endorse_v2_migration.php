@@ -54,7 +54,7 @@ try {
             echo "Migration already recorded\n";
             exit(0);
         }
-        $file = dirname(__DIR__) . '/migrations/' . $name . '.sql';
+        $file = (string) env('ENDORSE_V2_MIGRATION_FILE', dirname(__DIR__) . '/migrations/' . $name . '.sql');
         $sql = @file_get_contents($file);
         if ($sql === false) throw new RuntimeException('Migration file unavailable');
         $sql = preg_replace('/--.*$/m', '', $sql);
