@@ -28,6 +28,18 @@ INSERT INTO influencer_fixture VALUES
   (2, 'duplicate-name', 'first', 'phone'),
   (3, 'duplicate-name', 'second', 'email');
 
+-- MySQL temporary tables cannot be reopened in a self-derived query. Build the
+-- deterministic lookup once with MySQL 8 window functions; production uses the
+-- equivalent MIN(id) derived lookup against the real influencer table.
+CREATE TEMPORARY TABLE influencer_deduped AS
+SELECT username, contact, tipe_kontak
+FROM (
+  SELECT username, contact, tipe_kontak,
+         ROW_NUMBER() OVER (PARTITION BY username ORDER BY id ASC) AS fixture_rank
+  FROM influencer_fixture
+) AS ranked
+WHERE fixture_rank = 1;
+
 -- Each row below is a deterministic assertion: actual must equal expected.
 SELECT 'campaign/platform/status count' AS test_name,
        (SELECT COUNT(*) FROM endorse_fixture
@@ -48,13 +60,13 @@ SELECT 'empty campaign count' AS test_name,
        0 AS expected;
 
 -- This mirrors the production data query. The grouped derived join guarantees
--- one UI row per Endorse row even if influencer.username becomes duplicate.
+-- one UI row per Endorse row even if influencer.username becomes duplicate,
+-- selecting the lowest primary key as one coherent metadata row.
 SELECT e.id, i.contact, i.tipe_kontak
 FROM (SELECT * FROM endorse_fixture
       WHERE id_campaign = 10 AND platform = 'TikTok' AND status = 'Aktif') AS e
 LEFT JOIN (
-  SELECT username, MAX(contact) AS contact, MAX(tipe_kontak) AS tipe_kontak
-  FROM influencer_fixture GROUP BY username
+  SELECT username, contact, tipe_kontak FROM influencer_deduped
 ) AS i ON e.nama_creator = i.username
 ORDER BY e.id;
 
@@ -62,10 +74,13 @@ SELECT 'deduplicated influencer join' AS test_name,
        (SELECT COUNT(*)
         FROM (SELECT * FROM endorse_fixture WHERE id_campaign = 10) AS e
         LEFT JOIN (
-          SELECT username, MAX(contact) AS contact, MAX(tipe_kontak) AS tipe_kontak
-          FROM influencer_fixture GROUP BY username
+          SELECT username, contact, tipe_kontak FROM influencer_deduped
         ) AS i ON e.nama_creator = i.username) AS actual,
        4 AS expected;
+
+SELECT 'duplicate metadata uses lowest influencer id' AS test_name,
+       (SELECT contact FROM influencer_deduped WHERE username = 'duplicate-name') AS actual,
+       'first' AS expected;
 
 -- Pagination checks: the same filtered population must be stable for every
 -- supported limit. The application applies OFFSET/LIMIT only after this count.
@@ -92,6 +107,7 @@ SELECT 'page-size 10 empty last page' AS test_name,
 
 -- Manual assertions:
 -- returned IDs are 1,2,3,5; orphan ID 2 is present exactly once; and ID 3
--- remains exactly once despite two matching influencer_fixture rows.
+-- remains exactly once despite two matching influencer_fixture rows; its
+-- metadata is selected from influencer_fixture.id=2.
 -- The target controller's search/status/platform predicates must be substituted
 -- into both derived endorse subqueries for a full CI3 integration test.

@@ -1202,9 +1202,13 @@ class Endorse extends BaseController
             FROM
                 (SELECT * FROM endorse WHERE id_campaign = '$id_campaign' $qry) AS e
             LEFT JOIN (
-                SELECT username, MAX(contact) AS contact, MAX(tipe_kontak) AS tipe_kontak
-                FROM influencer
-                GROUP BY username
+                SELECT i.username, i.contact, i.tipe_kontak
+                FROM influencer AS i
+                INNER JOIN (
+                    SELECT username, MIN(id) AS selected_id
+                    FROM influencer
+                    GROUP BY username
+                ) AS selected ON selected.selected_id = i.id
             ) AS i ON e.nama_creator = i.username
             ORDER BY $sort_column $sort_order
             LIMIT $offset, $limit
