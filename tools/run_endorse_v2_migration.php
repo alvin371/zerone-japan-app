@@ -8,9 +8,10 @@ if (PHP_SAPI !== 'cli') {
     exit(1);
 }
 
+$appRoot = rtrim((string) (getenv('ENDORSE_V2_APP_ROOT') ?: '/var/www/html'), '/');
 define('BASEPATH', __DIR__);
-define('APPPATH', dirname(__DIR__) . '/application/');
-define('FCPATH', dirname(__DIR__) . '/');
+define('APPPATH', $appRoot . '/application/');
+define('FCPATH', $appRoot . '/');
 require APPPATH . 'helpers/env_helper.php';
 
 $mode = $argv[1] ?? '';
