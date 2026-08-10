@@ -88,6 +88,7 @@ $route['api/cronjob/scraping-enqueue'] = 'Api_v2/cronjob_scraping_enqueue';
 $route['api/cronjob/tiktok-sync'] = 'Api_v2/cronjob_tiktok_sync';
 $route['api/cronjob/endorse-refresh-enqueue-all'] = 'Api_v2/cronjob_endorse_refresh_enqueue_all';
 $route['api/cronjob/endorse-refresh'] = 'Api_v2/cronjob_endorse_refresh';
+$route['api/internal/endorse-v2/tick'] = 'Api_v2/cronjob_endorse_v2_tick';
 $route['cronjob/update-customer'] = 'Api/cronjob_update_customer';
 
 $route['api/webhook'] = 'Api_v2/webhook';
@@ -105,6 +106,8 @@ $route['ajax/refresh-campaign-endorses'] = 'Ajax/refresh_campaign_endorses';
 $route['ajax/refresh-all-active-endorses'] = 'Ajax/refresh_all_active_endorses';
 
 $route['endorse/bulk-refresh'] = 'Endorse/bulk_refresh';
+$route['endorse/v2/bulk-refresh'] = 'Endorse/bulk_refresh_v2';
+$route['endorse/v2/manual-override'] = 'Endorse/manual_override_v2';
 $route['endorse/queue'] = 'Endorse/queue';
 $route['endorse/queue-data'] = 'Endorse/queue_data';
 $route['endorse/queue-history'] = 'Endorse/queue_history';

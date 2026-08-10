@@ -52,6 +52,22 @@ class Api_v2 extends CI_Controller
         $html['msg'] = "Zerone Japan App REST API access has been successful!";
         echo json_encode($html, true);
     }
+
+    /** Signed internal V2 worker endpoint. No legacy route caller is changed by this addition. */
+    public function cronjob_endorse_v2_tick()
+    {
+        $this->load->library(['endorsev2runtime','endorsev2queue','endorsev2rollup']);
+        if (strtoupper($this->input->method(true)) !== 'POST' || !$this->endorsev2runtime->cronSignatureValid()) {
+            return $this->output->set_status_header(401)->set_content_type('application/json')->set_output(json_encode(['status'=>false,'msg'=>'Unauthorized']));
+        }
+        if (!$this->endorsev2runtime->canEnqueue()) {
+            return $this->output->set_status_header(503)->set_content_type('application/json')->set_output(json_encode(['status'=>false,'msg'=>'Endorse V2 is disabled']));
+        }
+        @set_time_limit(50); $workerId=bin2hex(random_bytes(16)); $limit=max(1,min(20,(int)$this->input->post('limit')?:5)); $jobs=[];
+        for($i=0;$i<$limit;$i++){ $result=$this->endorsev2queue->runOne($workerId,0); $jobs[]=$result; if(!empty($result['idle'])) break; }
+        $rollup=$this->endorsev2rollup->runOne($workerId,0);
+        return $this->output->set_content_type('application/json')->set_output(json_encode(['status'=>true,'jobs'=>$jobs,'rollup'=>$rollup]));
+    }
     
     function update_cronjob(){
         $platform = 'Tiktok';
