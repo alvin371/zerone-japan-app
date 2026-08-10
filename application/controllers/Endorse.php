@@ -1182,9 +1182,12 @@ class Endorse extends BaseController
 
         $sort_order = strtoupper($sort_order) === 'ASC' ? 'ASC' : 'DESC';
 
-        $count_query = $this->mymodel->selectWithQuery("SELECT COUNT(*) as total FROM endorse 
-            INNER JOIN influencer ON endorse.nama_creator = influencer.username
-            WHERE id_campaign = '$id_campaign' $qry");
+        // The list is anchored on endorse rows. Do not join influencer here: a
+        // missing profile must not disappear from pagination, and a future
+        // duplicate username must not inflate the total.
+        $count_query = $this->mymodel->selectWithQuery("SELECT COUNT(*) as total FROM (
+            SELECT * FROM endorse WHERE id_campaign = '$id_campaign' $qry
+        ) AS e");
         $total_data = $count_query[0]['total'];
         $data['total_data'] = $total_data;
         $data['page'] = ceil($total_data / $limit);
@@ -1197,8 +1200,12 @@ class Endorse extends BaseController
                 i.contact,
                 i.tipe_kontak
             FROM
-                (SELECT DISTINCT * FROM endorse WHERE id_campaign = '$id_campaign' $qry) AS e
-            LEFT JOIN influencer AS i ON e.nama_creator = i.username
+                (SELECT * FROM endorse WHERE id_campaign = '$id_campaign' $qry) AS e
+            LEFT JOIN (
+                SELECT username, MAX(contact) AS contact, MAX(tipe_kontak) AS tipe_kontak
+                FROM influencer
+                GROUP BY username
+            ) AS i ON e.nama_creator = i.username
             ORDER BY $sort_column $sort_order
             LIMIT $offset, $limit
         ");

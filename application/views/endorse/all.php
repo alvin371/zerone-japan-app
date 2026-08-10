@@ -1019,22 +1019,58 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
 </script>
 
 <script>
-    function loadMoreData() {
+    let endorseListRequest = null;
+    let endorseListRequestGeneration = 0;
+
+    function endorseListState() {
         const urlParams = new URLSearchParams(window.location.search);
-        const sortColumn = urlParams.get('sort_column') || 'id';
-        const sortOrder = urlParams.get('sort_order') || 'DESC';
-        
-        $.ajax({
+        return {
+            params: urlParams,
+            sortColumn: urlParams.get('sort_column') || 'id',
+            sortOrder: (urlParams.get('sort_order') || 'DESC').toLowerCase()
+        };
+    }
+
+    function loadMoreData(options) {
+        const settings = options || {};
+        const state = endorseListState();
+        const generation = ++endorseListRequestGeneration;
+
+        if (endorseListRequest && endorseListRequest.readyState !== 4) {
+            endorseListRequest.abort();
+        }
+
+        if (settings.showLoading) {
+            $('#tbody').html('<tr><td colspan="13" class="text-center"><div class="spinner-border" role="status"></div></td></tr>');
+        }
+
+        endorseListRequest = $.ajax({
             type: 'GET',
-            url: "<?= base_url() ?>/endorse/item<?= $url_item ?>&sort_column=" + sortColumn + "&sort_order=" + sortOrder,
+            url: "<?= base_url() ?>/endorse/item?" + state.params.toString(),
             success: function(data) {
-                $('#tbody').html('').append(data);
+                if (generation !== endorseListRequestGeneration) {
+                    return;
+                }
+
+                $('#tbody').html(data);
                 select3();
                 initSorting();
-                updateSortingIcons(sortColumn, sortOrder);
+                updateSortingIcons(state.sortColumn, state.sortOrder);
+
+                if (typeof settings.scrollPosition === 'number') {
+                    $(window).scrollTop(settings.scrollPosition);
+                }
             },
             error: function(xhr, status, error) {
+                if (status === 'abort' || generation !== endorseListRequestGeneration) {
+                    return;
+                }
                 console.error("Error loading data:", error);
+            },
+            complete: function() {
+                if (generation === endorseListRequestGeneration) {
+                    endorseListRequest = null;
+                }
             }
         });
     }
@@ -1079,23 +1115,7 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
         
         history.pushState(null, '', '?' + urlParams.toString());
         
-        $('#tbody').html('<tr><td colspan="13" class="text-center"><div class="spinner-border" role="status"></div></td></tr>');
-        
-        $.ajax({
-            type: 'GET',
-            url: "<?= base_url() ?>/endorse/item?" + urlParams.toString(),
-            success: function(data) {
-                $('#tbody').html(data);
-                select3();
-                initSorting(); 
-                updateSortingIcons(sortColumn, sortOrder);
-                
-                $(window).scrollTop(scrollPosition);
-            },
-            error: function(xhr, status, error) {
-                console.error("Error loading data:", error);
-            }
-        });
+        loadMoreData({ showLoading: true, scrollPosition: scrollPosition });
     }
 
     function updateSortingIcons(sortColumn, sortOrder) {
@@ -1109,7 +1129,7 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
             'posting_at': 'Tanggal Posting', 
             'views': 'Views',
             'cpm': 'CPM',
-            'likes': 'Engagement'
+            'engagement': 'Engagement'
         };
         
         const columnName = columnMap[sortColumn];
@@ -1161,6 +1181,12 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
 
     $(document).ready(function() {
         loadMoreData();
+    });
+
+    window.addEventListener('popstate', function() {
+        // The browser has already restored the URL. Reload the fragment from
+        // that state without pushing another history entry.
+        loadMoreData({ showLoading: true });
     });
 
     
