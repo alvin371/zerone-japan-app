@@ -18,6 +18,10 @@ if (!isset($options['campaign']) && !isset($options['all'])) {
     fwrite(STDERR, "Use --campaign=<id>; --all is reserved for restored/staging databases.\n");
     exit(2);
 }
+if (isset($options['all']) && getenv('ENDORSE_V2_DRY_RUN_ALLOW_ALL') !== '1') {
+    fwrite(STDERR, "Refusing unscoped dry run: set ENDORSE_V2_DRY_RUN_ALLOW_ALL=1 only on a restored/staging database.\n");
+    exit(2);
+}
 
 $campaignId = isset($options['campaign']) ? (int) $options['campaign'] : null;
 if ($campaignId !== null && $campaignId <= 0) {
