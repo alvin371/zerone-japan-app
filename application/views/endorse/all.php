@@ -762,6 +762,14 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
             </script>
         </div>
     </div>
+    <?php if (!empty($endorse_v2_analytics_visible)): ?>
+        <?php $this->load->view('endorse/_analytics_v2_shell', [
+            'analytics_campaign_id' => (int) $detail['id'],
+            'analytics_endpoint' => base_url('endorse/v2/analytics'),
+            'analytics_default_from' => $endorse_v2_analytics_default_from,
+            'analytics_default_until' => $endorse_v2_analytics_default_until,
+        ]); ?>
+    <?php endif; ?>
     <a href="#!" onclick="create('<?= $detail['id'] ?>')" class="btn btn-primary mt-0 mb-2"><i class="bi bi-plus-circle-dotted fs-16"></i> Tambah Konten</a>
 
     <tr>
