@@ -24,6 +24,7 @@ class Endorse extends BaseController
             'bulk_refresh' => 'edit',
             'bulk_refresh_v2' => 'edit',
             'manual_override_v2' => 'edit',
+            'analytics_v2' => 'view',
             'sync_all_process' => 'edit',
             'force_retry' => 'edit',
             'queue' => 'view',
@@ -814,6 +815,10 @@ class Endorse extends BaseController
         }
         $data['start_date'] = $start_date;
         $data['until_date'] = $until_date;
+        $this->load->library('endorsev2runtime');
+        $data['endorse_v2_analytics_visible'] = $this->endorsev2runtime->analyticsVisible();
+        $data['endorse_v2_analytics_default_from'] = date('Y-m-01');
+        $data['endorse_v2_analytics_default_until'] = date('Y-m-d');
         $qry = "";
 
         $ids = $_GET['ids'];
@@ -1570,6 +1575,91 @@ class Endorse extends BaseController
         $this->load->library('endorsev2manualoverride');
         $result=$this->endorsev2manualoverride->set((int)$this->input->post('endorse_id'),(string)$this->input->post('metric'),(int)$this->input->post('value'),(string)$this->input->post('reason'),(int)($_SESSION['user']['id']??0));
         return $this->output->set_content_type('application/json')->set_output(json_encode($result));
+    }
+
+    /**
+     * Read-only, observed-only Analytics V2 endpoint.  Population selection
+     * stays server-owned while product approval for canonical content remains
+     * outstanding.
+     */
+    public function analytics_v2()
+    {
+        $this->load->library(['endorsev2runtime', 'endorsev2observedanalyticsreader', 'endorsev2observedanalytics', 'endorsev2analyticspopulation']);
+        if (!$this->endorsev2runtime->analyticsVisible()) {
+            return $this->analyticsResponse(404, ['status' => false, 'message' => 'Analytics V2 tidak tersedia.']);
+        }
+
+        $campaignId = (int) $this->input->get('id_campaign');
+        $from = trim((string) $this->input->get('start_date'));
+        $until = trim((string) $this->input->get('until_date'));
+        if ($campaignId <= 0 || !$this->validAnalyticsDate($from) || !$this->validAnalyticsDate($until) || $from > $until) {
+            return $this->analyticsResponse(422, ['status' => false, 'message' => 'Parameter analytics tidak valid.']);
+        }
+
+        if (!$this->db->select('id')->where('id', $campaignId)->limit(1)->get('endorse_campaign')->row_array()) {
+            return $this->analyticsResponse(404, ['status' => false, 'message' => 'Campaign tidak ditemukan.']);
+        }
+
+        try {
+            $observations = $this->endorsev2observedanalyticsreader->observationsForCampaign(
+                $campaignId,
+                $from,
+                $until,
+                EndorseV2AnalyticsPopulation::ENDORSE_ROW
+            );
+            $summary = EndorseV2ObservedAnalytics::calculate(
+                $observations,
+                $from,
+                $until,
+                $this->analyticsCurrentTrustedTotal($campaignId)
+            );
+        } catch (Throwable $e) {
+            log_message('error', 'Endorse V2 analytics read failed: ' . $e->getMessage());
+            return $this->analyticsResponse(500, ['status' => false, 'message' => 'Analitik tidak dapat dimuat.']);
+        }
+
+        return $this->analyticsResponse(200, [
+            'status' => true,
+            'campaign_id' => $campaignId,
+            'date_from' => $from,
+            'date_to' => $until,
+            'timezone' => 'Asia/Jakarta',
+            'summary' => [
+                'opening_observed_total' => $summary['opening_observed_total'],
+                'observed_total_at_range_end' => $summary['observed_total_at_range_end'],
+                'observed_growth' => $summary['observed_growth'],
+                'current_trusted_total' => $summary['current_trusted_total'],
+                'last_successful_observation_at' => $summary['last_successful_observation_at'],
+            ],
+            'daily' => $summary['daily'],
+            'meta' => [
+                'calculation_version' => 'observed-only-v1',
+                'generated_at' => gmdate('Y-m-d H:i:s') . '.000000',
+            ],
+        ]);
+    }
+
+    private function analyticsCurrentTrustedTotal(int $campaignId): ?int
+    {
+        $row = $this->db->select('COUNT(s.trusted_views) AS metric_count, SUM(s.trusted_views) AS total', false)
+            ->from('endorse e')
+            ->join('endorse_v2_content_state s', 's.endorse_id = e.id', 'inner')
+            ->where('e.id_campaign', $campaignId)
+            ->get()->row_array();
+        return !empty($row) && (int) $row['metric_count'] > 0 ? (int) $row['total'] : null;
+    }
+
+    private function validAnalyticsDate(string $value): bool
+    {
+        $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+        return $date !== false && $date->format('Y-m-d') === $value;
+    }
+
+    private function analyticsResponse(int $status, array $payload)
+    {
+        return $this->output->set_status_header($status)
+            ->set_content_type('application/json')
+            ->set_output(json_encode($payload));
     }
 
     private function respond_bulk_refresh($is_alert, $ok, $msg, $enqueued, $skipped, $extra)
