@@ -27,6 +27,19 @@ class EndorseV2Runtime
         return in_array($mode, ['off', 'shadow', 'visible'], true) ? $mode : 'off';
     }
 
+    /**
+     * A browser may only receive the V2 Analytics capability when both the
+     * server mode and the additive read schema are explicitly available.
+     */
+    public function analyticsVisible(): bool
+    {
+        return $this->analyticsMode() === 'visible'
+            && $this->enabled('READ')
+            && $this->CI->db->table_exists('endorse_v2_metric_observations')
+            && $this->CI->db->table_exists('endorse_v2_content_state')
+            && $this->CI->db->field_exists('is_baseline', 'endorse_v2_metric_observations');
+    }
+
     public function canEnqueue(): bool
     {
         return $this->enabled('READ') && $this->enabled('ENQUEUE') && $this->enabled('WRITER')

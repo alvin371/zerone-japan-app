@@ -140,13 +140,13 @@ class Ajax extends CI_Controller
 			$filters_common .= " AND endorse.brand = '$brand' ";
 		}
 
-		// Status upload/FYP
+		// Match the visible campaign-detail category contract.
 		$status = $_GET['status'];
 		if ($status) {
-			if ($status == 'Ada Link Upload') {
-				$filters_common .= " AND endorse.link_upload != '' ";
-			} else if ($status == 'Tidak Ada Link Upload') {
-				$filters_common .= " AND endorse.link_upload = '' ";
+			if ($status == 'Ada MOU') {
+				$filters_common .= " AND endorse.link_mou != '' ";
+			} else if ($status == 'Tidak Ada MOU') {
+				$filters_common .= " AND endorse.link_mou = '' ";
 			} else if ($status == 'FYP') {
 				$filters_common .= " AND endorse.is_fyp = 1 ";
 			}

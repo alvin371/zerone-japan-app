@@ -24,6 +24,7 @@ class Endorse extends BaseController
             'bulk_refresh' => 'edit',
             'bulk_refresh_v2' => 'edit',
             'manual_override_v2' => 'edit',
+            'analytics_v2' => 'view',
             'sync_all_process' => 'edit',
             'force_retry' => 'edit',
             'queue' => 'view',
@@ -814,6 +815,10 @@ class Endorse extends BaseController
         }
         $data['start_date'] = $start_date;
         $data['until_date'] = $until_date;
+        $this->load->library('endorsev2runtime');
+        $data['endorse_v2_analytics_visible'] = $this->endorsev2runtime->analyticsVisible();
+        $data['endorse_v2_analytics_default_from'] = date('Y-m-01');
+        $data['endorse_v2_analytics_default_until'] = date('Y-m-d');
         $qry = "";
 
         $ids = $_GET['ids'];
@@ -929,7 +934,9 @@ class Endorse extends BaseController
         WHERE id_campaign = '$id_campaign' $qry 
         ");
 
-        $data['page'] = CEIL($query[0]['count'] / 10);
+        $data['per_page_options'] = $this->endorseListPerPageOptions();
+        $data['limit'] = $this->endorseListLimit();
+        $data['page'] = CEIL($query[0]['count'] / $data['limit']);
 
         $data['notif'] = '<p class="mb-1"><label class="text-notif">' . $this->template->separator_only($query[0]['count']) . ' data ditemukan!</label></p>';
 
@@ -949,6 +956,7 @@ class Endorse extends BaseController
         $url = base_url() . '/endorse/' . $this->template->get_param();
         $data['url'] = $this->template->get_param_without('endorse_status');
         $data['url_2'] = $this->template->get_param_without('status');
+        $data['url_payment'] = $this->template->get_param_without('status_payment');
         $data['url_item'] = $this->template->get_param();
         $data['param'] = $this->template->get_param();
         $data['param_pagination'] = $this->template->get_param_without('page');
@@ -1160,11 +1168,8 @@ class Endorse extends BaseController
             $qry .= " AND kode_ads = '' ";
         }
 
-        $per_page_options = [10, 20, 30, 50, 100, 500];
-        $limit = $_GET['limit'] ?? 10;
-        if (!in_array($limit, $per_page_options)) {
-            $limit = 10;
-        }
+        $per_page_options = $this->endorseListPerPageOptions();
+        $limit = $this->endorseListLimit();
         $data['limit'] = $limit;
         $data['per_page_options'] = $per_page_options;
 
@@ -1174,17 +1179,20 @@ class Endorse extends BaseController
         $sort_column = $_GET['sort_column'] ?? 'id'; 
         $sort_order = $_GET['sort_order'] ?? 'DESC'; 
 
-        $allowed_columns = ['id', 'nama_creator', 'pic', 'total_cost', 'status_endorse', 
-                        'views', 'cpm', 'engagement'];
+        $allowed_columns = ['id', 'nama_creator', 'pic', 'total_cost', 'status_endorse',
+                        'posting_at', 'views', 'cpm', 'engagement'];
         if (!in_array($sort_column, $allowed_columns)) {
             $sort_column = 'id';
         }
 
         $sort_order = strtoupper($sort_order) === 'ASC' ? 'ASC' : 'DESC';
 
-        $count_query = $this->mymodel->selectWithQuery("SELECT COUNT(*) as total FROM endorse 
-            INNER JOIN influencer ON endorse.nama_creator = influencer.username
-            WHERE id_campaign = '$id_campaign' $qry");
+        // The list is anchored on endorse rows. Do not join influencer here: a
+        // missing profile must not disappear from pagination, and a future
+        // duplicate username must not inflate the total.
+        $count_query = $this->mymodel->selectWithQuery("SELECT COUNT(*) as total FROM (
+            SELECT * FROM endorse WHERE id_campaign = '$id_campaign' $qry
+        ) AS e");
         $total_data = $count_query[0]['total'];
         $data['total_data'] = $total_data;
         $data['page'] = ceil($total_data / $limit);
@@ -1197,8 +1205,16 @@ class Endorse extends BaseController
                 i.contact,
                 i.tipe_kontak
             FROM
-                (SELECT DISTINCT * FROM endorse WHERE id_campaign = '$id_campaign' $qry) AS e
-            LEFT JOIN influencer AS i ON e.nama_creator = i.username
+                (SELECT * FROM endorse WHERE id_campaign = '$id_campaign' $qry) AS e
+            LEFT JOIN (
+                SELECT i.username, i.contact, i.tipe_kontak
+                FROM influencer AS i
+                INNER JOIN (
+                    SELECT username, MIN(id) AS selected_id
+                    FROM influencer
+                    GROUP BY username
+                ) AS selected ON selected.selected_id = i.id
+            ) AS i ON e.nama_creator = i.username
             ORDER BY $sort_column $sort_order
             LIMIT $offset, $limit
         ");
@@ -1559,6 +1575,102 @@ class Endorse extends BaseController
         $this->load->library('endorsev2manualoverride');
         $result=$this->endorsev2manualoverride->set((int)$this->input->post('endorse_id'),(string)$this->input->post('metric'),(int)$this->input->post('value'),(string)$this->input->post('reason'),(int)($_SESSION['user']['id']??0));
         return $this->output->set_content_type('application/json')->set_output(json_encode($result));
+    }
+
+    /**
+     * Read-only, observed-only Analytics V2 endpoint.  Population selection
+     * stays server-owned while product approval for canonical content remains
+     * outstanding.
+     */
+    public function analytics_v2()
+    {
+        $this->load->library(['endorsev2runtime', 'endorsev2observedanalyticsreader', 'endorsev2observedanalytics', 'endorsev2analyticspopulation']);
+        if (!$this->endorsev2runtime->analyticsVisible()) {
+            return $this->analyticsResponse(404, ['status' => false, 'message' => 'Analytics V2 tidak tersedia.']);
+        }
+
+        $campaignId = (int) $this->input->get('id_campaign');
+        $from = trim((string) $this->input->get('start_date'));
+        $until = trim((string) $this->input->get('until_date'));
+        if ($campaignId <= 0 || !$this->validAnalyticsDate($from) || !$this->validAnalyticsDate($until) || $from > $until) {
+            return $this->analyticsResponse(422, ['status' => false, 'message' => 'Parameter analytics tidak valid.']);
+        }
+
+        if (!$this->db->select('id')->where('id', $campaignId)->limit(1)->get('endorse_campaign')->row_array()) {
+            return $this->analyticsResponse(404, ['status' => false, 'message' => 'Campaign tidak ditemukan.']);
+        }
+
+        try {
+            $observations = $this->endorsev2observedanalyticsreader->observationsForCampaign(
+                $campaignId,
+                $from,
+                $until,
+                EndorseV2AnalyticsPopulation::ENDORSE_ROW
+            );
+            $summary = EndorseV2ObservedAnalytics::calculate(
+                $observations,
+                $from,
+                $until,
+                $this->analyticsCurrentTrustedTotal($campaignId)
+            );
+        } catch (Throwable $e) {
+            log_message('error', 'Endorse V2 analytics read failed: ' . $e->getMessage());
+            return $this->analyticsResponse(500, ['status' => false, 'message' => 'Analitik tidak dapat dimuat.']);
+        }
+
+        return $this->analyticsResponse(200, [
+            'status' => true,
+            'campaign_id' => $campaignId,
+            'date_from' => $from,
+            'date_to' => $until,
+            'timezone' => 'Asia/Jakarta',
+            'summary' => [
+                'opening_observed_total' => $summary['opening_observed_total'],
+                'observed_total_at_range_end' => $summary['observed_total_at_range_end'],
+                'observed_growth' => $summary['observed_growth'],
+                'current_trusted_total' => $summary['current_trusted_total'],
+                'last_successful_observation_at' => $summary['last_successful_observation_at'],
+            ],
+            'daily' => $summary['daily'],
+            'meta' => [
+                'calculation_version' => 'observed-only-v1',
+                'generated_at' => gmdate('Y-m-d H:i:s') . '.000000',
+            ],
+        ]);
+    }
+
+    private function analyticsCurrentTrustedTotal(int $campaignId): ?int
+    {
+        $row = $this->db->select('COUNT(s.trusted_views) AS metric_count, SUM(s.trusted_views) AS total', false)
+            ->from('endorse e')
+            ->join('endorse_v2_content_state s', 's.endorse_id = e.id', 'inner')
+            ->where('e.id_campaign', $campaignId)
+            ->get()->row_array();
+        return !empty($row) && (int) $row['metric_count'] > 0 ? (int) $row['total'] : null;
+    }
+
+    private function endorseListPerPageOptions(): array
+    {
+        return [10, 20, 50, 100, 500];
+    }
+
+    private function endorseListLimit(): int
+    {
+        $limit = (int) $this->input->get('limit');
+        return in_array($limit, $this->endorseListPerPageOptions(), true) ? $limit : 10;
+    }
+
+    private function validAnalyticsDate(string $value): bool
+    {
+        $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+        return $date !== false && $date->format('Y-m-d') === $value;
+    }
+
+    private function analyticsResponse(int $status, array $payload)
+    {
+        return $this->output->set_status_header($status)
+            ->set_content_type('application/json')
+            ->set_output(json_encode($payload));
     }
 
     private function respond_bulk_refresh($is_alert, $ok, $msg, $enqueued, $skipped, $extra)

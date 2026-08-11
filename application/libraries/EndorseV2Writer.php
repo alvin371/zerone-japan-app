@@ -31,7 +31,8 @@ class EndorseV2Writer
             'saves' => $this->presentInt($data, 'collect'),
         ];
         $overrides = $this->activeOverrides((int) $endorse['id'], (int) $state['content_generation']);
-        $metrics = $this->trustedMetrics($previous, $incoming, $overrides);
+        $this->CI->load->library('endorsev2metrictrustpolicy');
+        $metrics = EndorseV2MetricTrustPolicy::trusted($previous, $incoming, $overrides);
         $observedAt = $this->observedAt($data);
         $observationDate = (new DateTimeImmutable($observedAt, new DateTimeZone('UTC')))->setTimezone(new DateTimeZone('Asia/Jakarta'))->format('Y-m-d');
         $anomaly = [];
@@ -53,15 +54,19 @@ class EndorseV2Writer
         $this->CI->db->update('endorse', $legacyUpdate, ['id' => $endorse['id']]);
 
         $existing = $this->CI->db->get_where('endorse_v2_metric_observations', ['endorse_id' => $endorse['id'], 'content_generation' => $state['content_generation'], 'observation_date' => $observationDate])->row_array();
-        $before = $existing ?: $this->previousObservation((int) $endorse['id'], (int) $state['content_generation'], $observationDate);
+        $predecessor = $existing ?: $this->previousObservation((int) $endorse['id'], (int) $state['content_generation'], $observationDate);
+        $this->CI->load->library('endorsev2observationpolicy');
+        $storage = EndorseV2ObservationPolicy::build($metrics, $existing ?: null, $existing ? null : ($predecessor ?: null));
+        $before = $storage['before'];
         $observation = [
             'endorse_id' => $endorse['id'], 'campaign_id_at_observation' => $endorse['id_campaign'], 'content_generation' => $state['content_generation'],
             'observation_date' => $observationDate, 'observed_at' => $observedAt, 'observation_time_source' => 'worker_received', 'observation_kind' => 'provider',
-            'views_before' => $before['views_after'] ?? $previous['views'], 'views_after' => $metrics['views'],
-            'likes_before' => $before['likes_after'] ?? $previous['likes'], 'likes_after' => $metrics['likes'],
-            'comments_before' => $before['comments_after'] ?? $previous['comments'], 'comments_after' => $metrics['comments'],
-            'shares_before' => $before['shares_after'] ?? null, 'shares_after' => $metrics['shares'],
-            'saves_before' => $before['saves_after'] ?? null, 'saves_after' => $metrics['saves'],
+            'is_baseline' => $storage['is_baseline'] ? 1 : 0, 'baseline_reason' => $storage['baseline_reason'],
+            'views_before' => $before['views'], 'views_after' => $metrics['views'],
+            'likes_before' => $before['likes'], 'likes_after' => $metrics['likes'],
+            'comments_before' => $before['comments'], 'comments_after' => $metrics['comments'],
+            'shares_before' => $before['shares'], 'shares_after' => $metrics['shares'],
+            'saves_before' => $before['saves'], 'saves_after' => $metrics['saves'],
             'anomaly_json' => empty($anomaly) ? null : json_encode($anomaly), 'source_attempt_id' => $attemptId, 'updated_at' => self::utcNow(),
         ];
         if ($existing) $this->CI->db->update('endorse_v2_metric_observations', $observation, ['id' => $existing['id']]);
@@ -71,16 +76,6 @@ class EndorseV2Writer
 
     private function presentInt(array $data, string $key): ?int { return array_key_exists($key, $data) && $data[$key] !== null && $data[$key] !== '' ? max(0, (int) $data[$key]) : null; }
     private function activeOverrides(int $endorseId, int $generation): array { $rows=$this->CI->db->where(['endorse_id'=>$endorseId,'content_generation'=>$generation])->where('cleared_at IS NULL', null, false)->get('endorse_v2_manual_overrides')->result_array(); $out=[]; foreach($rows as $r) $out[$r['metric']]=(int)$r['value']; return $out; }
-    private function trustedMetrics(array $previous, array $incoming, array $overrides): array {
-        // Only views is protected as monotonic. Likes/comments/shares/saves use an explicit provider value, including zero.
-        $views = array_key_exists('views',$overrides) ? $overrides['views'] : ($incoming['views'] === null ? (int)($previous['views']??0) : max((int)($previous['views']??0),$incoming['views']));
-        $likes = array_key_exists('likes',$overrides) ? $overrides['likes'] : ($incoming['likes'] ?? (int)($previous['likes']??0));
-        $comments = array_key_exists('comments',$overrides) ? $overrides['comments'] : ($incoming['comments'] ?? (int)($previous['comments']??0));
-        $shares = array_key_exists('shares',$overrides) ? $overrides['shares'] : ($incoming['shares'] ?? null);
-        $saves = array_key_exists('saves',$overrides) ? $overrides['saves'] : ($incoming['saves'] ?? null);
-        $combined = ($shares === null && $saves === null) ? (int)($previous['share_save']??0) : (int)($shares??0)+(int)($saves??0);
-        return compact('views','likes','comments','shares','saves') + ['share_save'=>$combined];
-    }
     private function observedAt(array $data): string { if (!empty($data['observed_at'])) { try { return (new DateTimeImmutable($data['observed_at']))->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s.u'); } catch (Exception $e) {} } return self::utcNow(); }
     private function previousObservation(int $endorseId,int $generation,string $date): array { return (array)$this->CI->db->where('endorse_id',$endorseId)->where('content_generation',$generation)->where('observation_date <',$date)->order_by('observation_date','DESC')->limit(1)->get('endorse_v2_metric_observations')->row_array(); }
 }

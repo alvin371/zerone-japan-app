@@ -76,7 +76,7 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
             <p class="mb-0">Status Campaign : <?= $detail['status'] ?></p>
         </div>
         <div class="col-lg-12 mb-3">
-            <form action="<?= $url ?>" method="GET">
+            <form action="<?= $url ?>" method="GET" id="endorse-filter-form">
                 <input type="hidden" name="view" value="<?= $current_view ?>">
                 <input type="hidden" name="ids" value="<?= $ids ?>">
                 <input type="hidden" name="id_campaign" value="<?= $detail['id'] ?>">
@@ -167,7 +167,7 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
                                 $class = "btn-default-selected";
                             }
                         ?>
-                            <a href="<?= $url ?>&status_payment=<?= $status ?>" class="btn <?= $class ?> mb-2 me-2"><span class="<?= $class_2 ?>"></span> <?= $val ?></a>
+                            <a href="<?= $url_payment ?>&status_payment=<?= $status ?>" class="btn <?= $class ?> mb-2 me-2"><span class="<?= $class_2 ?>"></span> <?= $val ?></a>
                         <?php } ?>
 
                         <div class="col-md-12"></div>
@@ -301,7 +301,7 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
                                 <div class="col-md-3">
                                     <?php
                                     $arr = [];
-                                    $arr[] = "";
+                                    $arr[] = "Tanggal Konten";
                                     $arr[] = "Tanggal Dibuat";
                                     // $arr[] = "Rencana Upload";
                                     $arr[] = "Tanggal Posting";
@@ -313,7 +313,7 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
                                                 $text = "selected";
                                             }
                                         ?>
-                                            <option <?= $text ?> value="<?= $v ?>"><?= $v ?></option>
+                                            <option <?= $text ?> value="<?= $k === 0 ? '' : $v ?>"><?= $v ?></option>
                                         <?php
                                         } ?>
                                     </select>
@@ -321,9 +321,10 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
                             </div>
                         </div>
                         <div class="col-md-4">
-                            <input type="text" class="form-control form-control-sm" id="tanggal" placeholder="Pilih rentang tanggal...">
+                            <input type="text" class="form-control form-control-sm" id="tanggal" placeholder="Pilih rentang tanggal konten...">
                             <input type="hidden" name="start_date" id="start_date" value="<?= $_GET['start_date'] ?? $start_date ?>">
                             <input type="hidden" name="until_date" id="end_date" value="<?= $_GET['until_date'] ?? $until_date ?>">
+                            <div class="form-text" id="content-date-category-note">Pilih kategori tanggal sebelum menerapkan rentang ke daftar konten.</div>
                         </div>
                         <div class="col-md-2">
                             <button class="btn btn-primary btn-sm w-100 form-control form-control-sm" type="submit">
@@ -350,6 +351,24 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
                                     }
                                 });
                             }
+
+                            let endorseContentDateRangeChanged = false;
+                            $(document).on('apply.daterangepicker', '#tanggal', function() {
+                                endorseContentDateRangeChanged = true;
+                            });
+                            $(document).on('click', '.custom-ranges button', function() {
+                                endorseContentDateRangeChanged = true;
+                            });
+                            $('#endorse-filter-form').on('submit', function(event) {
+                                if (endorseContentDateRangeChanged && !$(this).find('[name="cat"]').val()) {
+                                    event.preventDefault();
+                                    $('#content-date-category-note')
+                                        .removeClass('text-muted')
+                                        .addClass('text-danger')
+                                        .text('Pilih kategori tanggal, misalnya Tanggal Dibuat atau Tanggal Posting, sebelum menerapkan rentang.');
+                                    $(this).find('[name="cat"]').trigger('focus');
+                                }
+                            });
                         </script>
                     </div>
                     <div class="col-lg-6">
@@ -647,6 +666,9 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
                     }
 
 
+                let legacyCampaignChartRequest = null;
+                let legacyCampaignChartGeneration = 0;
+
                 function get_chart() {
                     var chartStartDate = $('#chart_start_date').val();
                     var chartUntilDate = $('#chart_until_date').val();
@@ -679,10 +701,18 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
 
                     var url = baseUrl + (queryString ? '?' + queryString : '');
 
-                    $.ajax({
+                    const generation = ++legacyCampaignChartGeneration;
+                    if (legacyCampaignChartRequest && legacyCampaignChartRequest.readyState !== 4) {
+                        legacyCampaignChartRequest.abort();
+                    }
+
+                    legacyCampaignChartRequest = $.ajax({
                         dataType: "json",
                         url: url,
                         success: function(html) {
+                        if (generation !== legacyCampaignChartGeneration) {
+                            return;
+                        }
                         $("#summary-chart").html(html.html);
                         $("#summary-table").html(html.table);
                         $("#summary-mar-3").html('<i class="fa fa-circle-o-notch fa-spin"></i>');
@@ -699,9 +729,17 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
                         $("#summary-mar-5").html(html.summary.endorse);
                         },
                         error: function(xhr, status, error) {
+                        if (status === 'abort' || generation !== legacyCampaignChartGeneration) {
+                            return;
+                        }
                         console.error('Error loading chart:', error);
                         $("#summary-chart").html('<div class="alert alert-danger">Error loading chart data. Please try again.</div>');
                         $("#summary-table").html('');
+                        },
+                        complete: function() {
+                            if (generation === legacyCampaignChartGeneration) {
+                                legacyCampaignChartRequest = null;
+                            }
                         }
                     });
                     }
@@ -762,6 +800,14 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
             </script>
         </div>
     </div>
+    <?php if (!empty($endorse_v2_analytics_visible)): ?>
+        <?php $this->load->view('endorse/_analytics_v2_shell', [
+            'analytics_campaign_id' => (int) $detail['id'],
+            'analytics_endpoint' => base_url('endorse/v2/analytics'),
+            'analytics_default_from' => $endorse_v2_analytics_default_from,
+            'analytics_default_until' => $endorse_v2_analytics_default_until,
+        ]); ?>
+    <?php endif; ?>
     <a href="#!" onclick="create('<?= $detail['id'] ?>')" class="btn btn-primary mt-0 mb-2"><i class="bi bi-plus-circle-dotted fs-16"></i> Tambah Konten</a>
 
     <tr>
@@ -813,14 +859,9 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
             </div>
             <div>
                 <?php
-                $per_page_options = [10, 20, 50, 100, 500];
-                $limit = $_GET['limit'] ?? 10;
-                if (!in_array($limit, $per_page_options)) {
-                    $limit = 10;
-                }
-
                 $query_params = $_GET;
                 unset($query_params['limit']);
+                unset($query_params['page']);
                 ?>
 
                 <form method="GET" action="">
@@ -1019,22 +1060,58 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
 </script>
 
 <script>
-    function loadMoreData() {
+    let endorseListRequest = null;
+    let endorseListRequestGeneration = 0;
+
+    function endorseListState() {
         const urlParams = new URLSearchParams(window.location.search);
-        const sortColumn = urlParams.get('sort_column') || 'id';
-        const sortOrder = urlParams.get('sort_order') || 'DESC';
-        
-        $.ajax({
+        return {
+            params: urlParams,
+            sortColumn: urlParams.get('sort_column') || 'id',
+            sortOrder: (urlParams.get('sort_order') || 'DESC').toLowerCase()
+        };
+    }
+
+    function loadMoreData(options) {
+        const settings = options || {};
+        const state = endorseListState();
+        const generation = ++endorseListRequestGeneration;
+
+        if (endorseListRequest && endorseListRequest.readyState !== 4) {
+            endorseListRequest.abort();
+        }
+
+        if (settings.showLoading) {
+            $('#tbody').html('<tr><td colspan="13" class="text-center"><div class="spinner-border" role="status"></div></td></tr>');
+        }
+
+        endorseListRequest = $.ajax({
             type: 'GET',
-            url: "<?= base_url() ?>/endorse/item<?= $url_item ?>&sort_column=" + sortColumn + "&sort_order=" + sortOrder,
+            url: "<?= base_url() ?>/endorse/item?" + state.params.toString(),
             success: function(data) {
-                $('#tbody').html('').append(data);
+                if (generation !== endorseListRequestGeneration) {
+                    return;
+                }
+
+                $('#tbody').html(data);
                 select3();
                 initSorting();
-                updateSortingIcons(sortColumn, sortOrder);
+                updateSortingIcons(state.sortColumn, state.sortOrder);
+
+                if (typeof settings.scrollPosition === 'number') {
+                    $(window).scrollTop(settings.scrollPosition);
+                }
             },
             error: function(xhr, status, error) {
+                if (status === 'abort' || generation !== endorseListRequestGeneration) {
+                    return;
+                }
                 console.error("Error loading data:", error);
+            },
+            complete: function() {
+                if (generation === endorseListRequestGeneration) {
+                    endorseListRequest = null;
+                }
             }
         });
     }
@@ -1076,26 +1153,11 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
         const urlParams = new URLSearchParams(window.location.search);
         urlParams.set('sort_column', sortColumn);
         urlParams.set('sort_order', sortOrder);
-        
-        history.pushState(null, '', '?' + urlParams.toString());
-        
-        $('#tbody').html('<tr><td colspan="13" class="text-center"><div class="spinner-border" role="status"></div></td></tr>');
-        
-        $.ajax({
-            type: 'GET',
-            url: "<?= base_url() ?>/endorse/item?" + urlParams.toString(),
-            success: function(data) {
-                $('#tbody').html(data);
-                select3();
-                initSorting(); 
-                updateSortingIcons(sortColumn, sortOrder);
-                
-                $(window).scrollTop(scrollPosition);
-            },
-            error: function(xhr, status, error) {
-                console.error("Error loading data:", error);
-            }
-        });
+        urlParams.set('page', '1');
+
+        // A full navigation rebuilds pagination links from the same sort
+        // state, avoiding the old AJAX-only sort state being lost on page 2.
+        window.location.assign('?' + urlParams.toString());
     }
 
     function updateSortingIcons(sortColumn, sortOrder) {
@@ -1109,7 +1171,7 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
             'posting_at': 'Tanggal Posting', 
             'views': 'Views',
             'cpm': 'CPM',
-            'likes': 'Engagement'
+            'engagement': 'Engagement'
         };
         
         const columnName = columnMap[sortColumn];
@@ -1161,6 +1223,12 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
 
     $(document).ready(function() {
         loadMoreData();
+    });
+
+    window.addEventListener('popstate', function() {
+        // The browser has already restored the URL. Reload the fragment from
+        // that state without pushing another history entry.
+        loadMoreData({ showLoading: true });
     });
 
     

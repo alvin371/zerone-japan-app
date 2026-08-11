@@ -106,6 +106,7 @@ $route['ajax/refresh-campaign-endorses'] = 'Ajax/refresh_campaign_endorses';
 $route['ajax/refresh-all-active-endorses'] = 'Ajax/refresh_all_active_endorses';
 
 $route['endorse/bulk-refresh'] = 'Endorse/bulk_refresh';
+$route['endorse/v2/analytics'] = 'Endorse/analytics_v2';
 $route['endorse/v2/bulk-refresh'] = 'Endorse/bulk_refresh_v2';
 $route['endorse/v2/manual-override'] = 'Endorse/manual_override_v2';
 $route['endorse/queue'] = 'Endorse/queue';
