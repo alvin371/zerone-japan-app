@@ -17,6 +17,14 @@ defined('BASEPATH') or exit('No direct script access allowed');
         </div>
         <form data-analytics-form>
             <div class="row g-3 align-items-end mb-3">
+                <div class="col-12">
+                    <label class="form-label small d-block mb-1">Periode Observasi Views</label>
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Pilihan periode observasi views">
+                        <button type="button" class="btn btn-outline-primary" data-analytics-preset="current-month">Bulan Ini</button>
+                        <button type="button" class="btn btn-outline-primary" data-analytics-preset="previous-month">Bulan Lalu</button>
+                        <button type="button" class="btn btn-outline-secondary" data-analytics-preset="custom-range">Rentang Kustom</button>
+                    </div>
+                </div>
                 <div class="col-sm-4"><label class="form-label small" for="analytics-v2-from">Tanggal mulai</label><input class="form-control" id="analytics-v2-from" data-analytics-from type="date" required></div>
                 <div class="col-sm-4"><label class="form-label small" for="analytics-v2-until">Tanggal akhir</label><input class="form-control" id="analytics-v2-until" data-analytics-until type="date" required></div>
                 <div class="col-sm-4"><button type="submit" class="btn btn-primary w-100" data-analytics-apply>Terapkan</button></div>
@@ -88,7 +96,7 @@ defined('BASEPATH') or exit('No direct script access allowed');
         function renderEmpty() {
             destroyChart();
             $summary.empty();
-            $message.html('<div class="alert alert-light border mb-0">Belum ada pengamatan tepercaya dalam rentang ini.</div>');
+            $message.html('<div class="alert alert-light border mb-0">Belum ada pengamatan tepercaya pada periode ini.</div>');
             $chartWrap.addClass('d-none');
             $tableWrap.addClass('d-none');
             setState('Belum ada observasi', 'bg-secondary');
@@ -105,14 +113,14 @@ defined('BASEPATH') or exit('No direct script access allowed');
 
         function renderSummary(summary) {
             var cards = [
-                ['Total awal teramati', summary.opening_observed_total],
-                ['Total teramati akhir rentang', summary.observed_total_at_range_end],
-                ['Pertumbuhan teramati', summary.observed_growth],
-                ['Total tepercaya saat ini', summary.current_trusted_total],
-                ['Pengamatan berhasil terakhir', summary.last_successful_observation_at || null]
+                ['Total Awal Teramati', summary.opening_observed_total],
+                ['Total Teramati Akhir Rentang', summary.observed_total_at_range_end],
+                ['Pertumbuhan Views Teramati', summary.observed_growth],
+                ['Total Tepercaya Saat Ini', summary.current_trusted_total],
+                ['Pengamatan Berhasil Terakhir', summary.last_successful_observation_at || null]
             ];
             $summary.html(cards.map(function (card) {
-                var value = card[0] === 'Pengamatan berhasil terakhir'
+                var value = card[0] === 'Pengamatan Berhasil Terakhir'
                     ? (card[1] ? escapeHtml(card[1] + ' UTC') : '—')
                     : formatNumber(card[1]);
                 return '<div class="col-12 col-sm-6 col-lg"><div class="border rounded p-2 h-100"><div class="small text-muted">' + card[0] + '</div><strong>' + value + '</strong></div></div>';
@@ -139,7 +147,7 @@ defined('BASEPATH') or exit('No direct script access allowed');
                     labels: daily.map(function (day) { return day.date; }),
                     datasets: [
                         { label: 'Total teramati', type: 'line', data: daily.map(function (day) { return day.observed_total; }), borderColor: '#0d6efd', backgroundColor: '#0d6efd', spanGaps: false, tension: 0.15 },
-                        { label: 'Pertumbuhan teramati', type: 'bar', data: daily.map(function (day) { return day.observed_growth; }), backgroundColor: '#6c757d' }
+                        { label: 'Pertumbuhan Views Teramati', type: 'bar', data: daily.map(function (day) { return day.observed_growth; }), backgroundColor: '#6c757d' }
                     ]
                 },
                 options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales: { x: { ticks: { maxRotation: 0, autoSkip: true } } } }
@@ -160,6 +168,42 @@ defined('BASEPATH') or exit('No direct script access allowed');
             url.searchParams.set('analytics_start_date', from);
             url.searchParams.set('analytics_until_date', until);
             window.history.pushState(null, '', url.toString());
+        }
+
+        function formatDate(year, month, day) {
+            return String(year) + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+        }
+
+        function resolveMonthRange(referenceDate, offset) {
+            var parts = String(referenceDate || '').split('-').map(Number);
+            if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
+                return null;
+            }
+            var year = parts[0];
+            var monthIndex = parts[1] - 1 + offset;
+            year += Math.floor(monthIndex / 12);
+            monthIndex = ((monthIndex % 12) + 12) % 12;
+            var month = monthIndex + 1;
+            var lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+            return {
+                from: formatDate(year, month, 1),
+                until: formatDate(year, month, lastDay)
+            };
+        }
+
+        function applyPreset(preset) {
+            if (preset === 'custom-range') {
+                $from.trigger('focus');
+                return;
+            }
+            var range = resolveMonthRange(root.dataset.defaultUntil, preset === 'previous-month' ? -1 : 0);
+            if (!range) {
+                renderError('Periode observasi tidak dapat ditentukan.');
+                return;
+            }
+            $from.val(range.from);
+            $until.val(range.until);
+            load({ pushState: true });
         }
 
         function load(options) {
@@ -221,6 +265,9 @@ defined('BASEPATH') or exit('No direct script access allowed');
         $form.on('submit', function (event) {
             event.preventDefault();
             load({ pushState: true });
+        });
+        $root.on('click', '[data-analytics-preset]', function () {
+            applyPreset($(this).data('analytics-preset'));
         });
         $root.on('click', '[data-analytics-retry]', function () { load({ pushState: false }); });
         window.addEventListener('popstate', loadFromUrl);

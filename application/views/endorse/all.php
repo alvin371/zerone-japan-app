@@ -301,7 +301,7 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
                                 <div class="col-md-3">
                                     <?php
                                     $arr = [];
-                                    $arr[] = "";
+                                    $arr[] = "Tanggal Konten";
                                     $arr[] = "Tanggal Dibuat";
                                     // $arr[] = "Rencana Upload";
                                     $arr[] = "Tanggal Posting";
@@ -313,7 +313,7 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
                                                 $text = "selected";
                                             }
                                         ?>
-                                            <option <?= $text ?> value="<?= $v ?>"><?= $v ?></option>
+                                            <option <?= $text ?> value="<?= $k === 0 ? '' : $v ?>"><?= $v ?></option>
                                         <?php
                                         } ?>
                                     </select>
@@ -321,7 +321,7 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
                             </div>
                         </div>
                         <div class="col-md-4">
-                            <input type="text" class="form-control form-control-sm" id="tanggal" placeholder="Pilih rentang tanggal...">
+                            <input type="text" class="form-control form-control-sm" id="tanggal" placeholder="Pilih rentang tanggal konten...">
                             <input type="hidden" name="start_date" id="start_date" value="<?= $_GET['start_date'] ?? $start_date ?>">
                             <input type="hidden" name="until_date" id="end_date" value="<?= $_GET['until_date'] ?? $until_date ?>">
                             <div class="form-text" id="content-date-category-note">Pilih kategori tanggal sebelum menerapkan rentang ke daftar konten.</div>
