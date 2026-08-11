@@ -934,7 +934,9 @@ class Endorse extends BaseController
         WHERE id_campaign = '$id_campaign' $qry 
         ");
 
-        $data['page'] = CEIL($query[0]['count'] / 10);
+        $data['per_page_options'] = $this->endorseListPerPageOptions();
+        $data['limit'] = $this->endorseListLimit();
+        $data['page'] = CEIL($query[0]['count'] / $data['limit']);
 
         $data['notif'] = '<p class="mb-1"><label class="text-notif">' . $this->template->separator_only($query[0]['count']) . ' data ditemukan!</label></p>';
 
@@ -954,6 +956,7 @@ class Endorse extends BaseController
         $url = base_url() . '/endorse/' . $this->template->get_param();
         $data['url'] = $this->template->get_param_without('endorse_status');
         $data['url_2'] = $this->template->get_param_without('status');
+        $data['url_payment'] = $this->template->get_param_without('status_payment');
         $data['url_item'] = $this->template->get_param();
         $data['param'] = $this->template->get_param();
         $data['param_pagination'] = $this->template->get_param_without('page');
@@ -1165,11 +1168,8 @@ class Endorse extends BaseController
             $qry .= " AND kode_ads = '' ";
         }
 
-        $per_page_options = [10, 20, 30, 50, 100, 500];
-        $limit = $_GET['limit'] ?? 10;
-        if (!in_array($limit, $per_page_options)) {
-            $limit = 10;
-        }
+        $per_page_options = $this->endorseListPerPageOptions();
+        $limit = $this->endorseListLimit();
         $data['limit'] = $limit;
         $data['per_page_options'] = $per_page_options;
 
@@ -1179,8 +1179,8 @@ class Endorse extends BaseController
         $sort_column = $_GET['sort_column'] ?? 'id'; 
         $sort_order = $_GET['sort_order'] ?? 'DESC'; 
 
-        $allowed_columns = ['id', 'nama_creator', 'pic', 'total_cost', 'status_endorse', 
-                        'views', 'cpm', 'engagement'];
+        $allowed_columns = ['id', 'nama_creator', 'pic', 'total_cost', 'status_endorse',
+                        'posting_at', 'views', 'cpm', 'engagement'];
         if (!in_array($sort_column, $allowed_columns)) {
             $sort_column = 'id';
         }
@@ -1647,6 +1647,17 @@ class Endorse extends BaseController
             ->where('e.id_campaign', $campaignId)
             ->get()->row_array();
         return !empty($row) && (int) $row['metric_count'] > 0 ? (int) $row['total'] : null;
+    }
+
+    private function endorseListPerPageOptions(): array
+    {
+        return [10, 20, 50, 100, 500];
+    }
+
+    private function endorseListLimit(): int
+    {
+        $limit = (int) $this->input->get('limit');
+        return in_array($limit, $this->endorseListPerPageOptions(), true) ? $limit : 10;
     }
 
     private function validAnalyticsDate(string $value): bool
