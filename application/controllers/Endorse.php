@@ -815,7 +815,7 @@ class Endorse extends BaseController
         }
         $data['start_date'] = $start_date;
         $data['until_date'] = $until_date;
-        $this->load->library('endorsev2runtime');
+        $this->load->library('EndorseV2Runtime');
         $data['endorse_v2_analytics_visible'] = $this->endorsev2runtime->analyticsVisible();
         $data['endorse_v2_analytics_default_from'] = date('Y-m-01');
         $data['endorse_v2_analytics_default_until'] = date('Y-m-d');
@@ -1557,7 +1557,7 @@ class Endorse extends BaseController
         if (strtoupper($this->input->method(true)) !== 'POST') {
             return $this->output->set_status_header(405)->set_content_type('application/json')->set_output(json_encode(['status'=>false,'msg'=>'POST required']));
         }
-        $this->load->library(['endorsev2runtime','endorsev2queue']);
+        $this->load->library(['EndorseV2Runtime', 'EndorseV2Queue']);
         if (!$this->endorsev2runtime->canEnqueue()) {
             return $this->output->set_status_header(503)->set_content_type('application/json')->set_output(json_encode(['status'=>false,'msg'=>'Endorse V2 is disabled']));
         }
@@ -1572,7 +1572,7 @@ class Endorse extends BaseController
     public function manual_override_v2()
     {
         if (strtoupper($this->input->method(true)) !== 'POST') return $this->output->set_status_header(405)->set_output(json_encode(['status'=>false,'msg'=>'POST required']));
-        $this->load->library('endorsev2manualoverride');
+        $this->load->library('EndorseV2ManualOverride');
         $result=$this->endorsev2manualoverride->set((int)$this->input->post('endorse_id'),(string)$this->input->post('metric'),(int)$this->input->post('value'),(string)$this->input->post('reason'),(int)($_SESSION['user']['id']??0));
         return $this->output->set_content_type('application/json')->set_output(json_encode($result));
     }
@@ -1584,7 +1584,7 @@ class Endorse extends BaseController
      */
     public function analytics_v2()
     {
-        $this->load->library(['endorsev2runtime', 'endorsev2observedanalyticsreader', 'endorsev2observedanalytics', 'endorsev2analyticspopulation']);
+        $this->load->library(['EndorseV2Runtime', 'EndorseV2ObservedAnalyticsReader', 'EndorseV2ObservedAnalytics', 'EndorseV2AnalyticsPopulation']);
         if (!$this->endorsev2runtime->analyticsVisible()) {
             return $this->analyticsResponse(404, ['status' => false, 'message' => 'Analytics V2 tidak tersedia.']);
         }
@@ -2062,7 +2062,7 @@ class Endorse extends BaseController
         if ($this->db->update('endorse', $dt, array('id' => $id))) {
 
             // V2 generation changes only for social identity changes, never creator/campaign metadata edits.
-            $this->load->library('endorsev2state');
+            $this->load->library('EndorseV2State');
             $this->endorsev2state->afterEndorseUpdate((array) $old_data, array_merge((array) $old_data, (array) $dt));
 
             $id_parent = $id_campaign;
@@ -2568,7 +2568,7 @@ class Endorse extends BaseController
         }
 
         // V2 is audit-retentive: legacy deletion remains unchanged, sidecar history is retained and jobs are cancelled.
-        $this->load->library('endorsev2runtime');
+        $this->load->library('EndorseV2Runtime');
         if ($this->endorsev2runtime->canEnqueue() && $this->db->table_exists('endorse_v2_content_state')) {
             $now = gmdate('Y-m-d H:i:s') . '.000000';
             $this->db->update('endorse_v2_content_state', ['deleted_at' => $now, 'updated_at' => $now], ['endorse_id' => (int) $id]);

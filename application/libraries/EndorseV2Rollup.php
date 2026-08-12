@@ -5,7 +5,7 @@ defined('BASEPATH') or exit('No direct script access allowed');
 class EndorseV2Rollup
 {
     private $CI;
-    public function __construct() { $this->CI =& get_instance(); $this->CI->load->database(); $this->CI->load->library(['endorsev2runtime','endorsev2writer']); }
+    public function __construct() { $this->CI =& get_instance(); $this->CI->load->database(); $this->CI->load->library(['EndorseV2Runtime', 'EndorseV2Writer']); }
     public function runOne(string $workerId, int $actorId = 0): array
     {
         if (!$this->CI->endorsev2runtime->enabled('ROLLUP') || $this->CI->endorsev2runtime->writerMode() !== 'v2') return ['status'=>false,'code'=>'v2_disabled'];
