@@ -1980,7 +1980,7 @@ class Template
     function process_endorse_post_result($queueItem, $resultData)
     {
         $CI =& get_instance();
-        $CI->load->library('endorsev2runtime');
+        $CI->load->library('EndorseV2Runtime');
         if (!$CI->endorsev2runtime->legacyWritesAllowed()) {
             log_message('error', 'Endorse V2 rejected a legacy scraper-result writer invocation.');
             return false;

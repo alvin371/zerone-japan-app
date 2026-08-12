@@ -367,7 +367,24 @@ $current_view = isset($_GET['view']) ? $_GET['view'] : 'card'; // default ke car
                                         .addClass('text-danger')
                                         .text('Pilih kategori tanggal, misalnya Tanggal Dibuat atau Tanggal Posting, sebelum menerapkan rentang.');
                                     $(this).find('[name="cat"]').trigger('focus');
+                                    return;
                                 }
+
+                                // A GET form replaces its action query string. Start from the
+                                // current URL so status buttons and other URL-only filters are
+                                // retained when a content filter is applied.
+                                event.preventDefault();
+                                const url = new URL(window.location.href);
+                                const formData = new FormData(this);
+                                url.searchParams.delete('page');
+                                formData.forEach(function(value, key) {
+                                    if (value === '') {
+                                        url.searchParams.delete(key);
+                                    } else {
+                                        url.searchParams.set(key, value);
+                                    }
+                                });
+                                window.location.assign(url.toString());
                             });
                         </script>
                     </div>

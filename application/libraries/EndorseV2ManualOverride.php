@@ -5,7 +5,7 @@ defined('BASEPATH') or exit('No direct script access allowed');
 class EndorseV2ManualOverride
 {
     private $CI;
-    public function __construct() { $this->CI =& get_instance(); $this->CI->load->database(); $this->CI->load->library(['endorsev2runtime','endorsev2identity','endorsev2writer']); }
+    public function __construct() { $this->CI =& get_instance(); $this->CI->load->database(); $this->CI->load->library(['EndorseV2Runtime', 'EndorseV2Identity', 'EndorseV2Writer']); }
     public function set(int $endorseId, string $metric, int $value, string $reason, int $actorId): array
     {
         if (!$this->CI->endorsev2runtime->canEnqueue()) return ['status'=>false,'code'=>'v2_disabled'];

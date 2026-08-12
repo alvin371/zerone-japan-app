@@ -31,7 +31,7 @@ class EndorseV2Writer
             'saves' => $this->presentInt($data, 'collect'),
         ];
         $overrides = $this->activeOverrides((int) $endorse['id'], (int) $state['content_generation']);
-        $this->CI->load->library('endorsev2metrictrustpolicy');
+        $this->CI->load->library('EndorseV2MetricTrustPolicy');
         $metrics = EndorseV2MetricTrustPolicy::trusted($previous, $incoming, $overrides);
         $observedAt = $this->observedAt($data);
         $observationDate = (new DateTimeImmutable($observedAt, new DateTimeZone('UTC')))->setTimezone(new DateTimeZone('Asia/Jakarta'))->format('Y-m-d');
@@ -55,7 +55,7 @@ class EndorseV2Writer
 
         $existing = $this->CI->db->get_where('endorse_v2_metric_observations', ['endorse_id' => $endorse['id'], 'content_generation' => $state['content_generation'], 'observation_date' => $observationDate])->row_array();
         $predecessor = $existing ?: $this->previousObservation((int) $endorse['id'], (int) $state['content_generation'], $observationDate);
-        $this->CI->load->library('endorsev2observationpolicy');
+        $this->CI->load->library('EndorseV2ObservationPolicy');
         $storage = EndorseV2ObservationPolicy::build($metrics, $existing ?: null, $existing ? null : ($predecessor ?: null));
         $before = $storage['before'];
         $observation = [

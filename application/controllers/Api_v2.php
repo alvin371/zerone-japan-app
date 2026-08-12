@@ -56,7 +56,7 @@ class Api_v2 extends CI_Controller
     /** Signed internal V2 worker endpoint. No legacy route caller is changed by this addition. */
     public function cronjob_endorse_v2_tick()
     {
-        $this->load->library(['endorsev2runtime','endorsev2queue','endorsev2rollup']);
+        $this->load->library(['EndorseV2Runtime', 'EndorseV2Queue', 'EndorseV2Rollup']);
         if (strtoupper($this->input->method(true)) !== 'POST' || !$this->endorsev2runtime->cronSignatureValid()) {
             return $this->output->set_status_header(401)->set_content_type('application/json')->set_output(json_encode(['status'=>false,'msg'=>'Unauthorized']));
         }

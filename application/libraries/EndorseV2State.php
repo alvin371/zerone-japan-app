@@ -5,7 +5,7 @@ defined('BASEPATH') or exit('No direct script access allowed');
 class EndorseV2State
 {
     private $CI;
-    public function __construct(){ $this->CI =& get_instance(); $this->CI->load->database(); $this->CI->load->library(['endorsev2runtime','endorsev2identity','endorsev2writer']); }
+    public function __construct(){ $this->CI =& get_instance(); $this->CI->load->database(); $this->CI->load->library(['EndorseV2Runtime', 'EndorseV2Identity', 'EndorseV2Writer']); }
     public function afterEndorseUpdate(array $old,array $new): void
     {
         if (!$this->CI->endorsev2runtime->canEnqueue()) return;
