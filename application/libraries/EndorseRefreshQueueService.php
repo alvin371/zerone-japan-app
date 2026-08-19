@@ -160,14 +160,32 @@ class EndorseRefreshQueueService
             return intval($row['id_endorse']);
         }, $rows));
 
+        $this->CI->load->library('template');
         $now = date('Y-m-d H:i:s');
         $batch = [];
+        $threadEnqueued = 0;
         $skipped = 0;
 
         foreach ($rows as $row) {
             $id_endorse = intval($row['id_endorse']);
             if (isset($active[$id_endorse])) {
                 $skipped++;
+                continue;
+            }
+
+            if (strtolower(trim(strval($row['platform'] ?? ''))) === 'threads') {
+                $queued = $this->CI->template->enqueue_post_scrape(
+                    'endorse',
+                    $id_endorse,
+                    'Threads',
+                    strval($row['link_upload']),
+                    intval($row['priority']) > 0 ? intval($row['priority']) : self::DEFAULT_PRIORITY
+                );
+                if (!empty($queued['status']) && stripos(strval($queued['msg'] ?? ''), 'Already') === false) {
+                    $threadEnqueued++;
+                } else {
+                    $skipped++;
+                }
                 continue;
             }
 
@@ -192,8 +210,8 @@ class EndorseRefreshQueueService
 
         return [
             'status' => true,
-            'msg' => count($batch) . ' baris dijadwalkan ulang.' . ($skipped > 0 ? " $skipped dilewati karena masih aktif di antrian." : ''),
-            'updated' => count($batch),
+            'msg' => (count($batch) + $threadEnqueued) . ' baris dijadwalkan ulang.' . ($skipped > 0 ? " $skipped dilewati karena masih aktif di antrian." : ''),
+            'updated' => count($batch) + $threadEnqueued,
             'skipped_duplicates' => $skipped,
         ];
     }
@@ -410,6 +428,7 @@ class EndorseRefreshQueueService
             UPDATE endorse_refresh_queue
             SET status = 'processing', worker_id = '$worker_id', claimed_at = '$now', started_at = '$now'
             WHERE status = 'pending' AND worker_id IS NULL
+              AND LOWER(platform) <> 'threads'
             ORDER BY priority DESC, attempts ASC, created_at ASC
             LIMIT $limit
         ");
@@ -613,6 +632,7 @@ class EndorseRefreshQueueService
 
     protected function enqueueRows(array $rows, int $user_id): array
     {
+        $this->CI->load->library('template');
         $candidateIds = array_map(function ($row) {
             return intval($row['id']);
         }, $rows);
@@ -629,6 +649,22 @@ class EndorseRefreshQueueService
         foreach ($rows as $row) {
             $campaigns[intval($row['id_campaign'])] = true;
             $id_endorse = intval($row['id']);
+
+            if (strtolower(trim(strval($row['platform'] ?? ''))) === 'threads') {
+                $queued = $this->CI->template->enqueue_post_scrape(
+                    'endorse',
+                    $id_endorse,
+                    'Threads',
+                    strval($row['link_upload']),
+                    self::DEFAULT_PRIORITY
+                );
+                if (!empty($queued['status']) && stripos(strval($queued['msg'] ?? ''), 'Already') === false) {
+                    $enqueued++;
+                } else {
+                    $skipped++;
+                }
+                continue;
+            }
 
             if (isset($already[$id_endorse])) {
                 $skipped++;
