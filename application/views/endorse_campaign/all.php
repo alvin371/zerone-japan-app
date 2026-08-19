@@ -133,6 +133,14 @@
         $("#load-form").load("<?= base_url() ?>/endorse-campaign/edit?id=" + id + internalParam);
     }
 
+    function checkDuplicate(id) {
+        $("#load-form").html('Loading...');
+        $("#modal-form").modal('show');
+        $("#modal-dialog").addClass('modal-lg');
+        $("#title-form").html('Cek Duplikat Konten');
+        $("#load-form").load("<?= base_url() ?>endorse-campaign/duplicate?id_campaign=" + id);
+    }
+
     function showModal(title, url, isLarge = false) {
         $("#load-form").html('Loading...');
         $("#modal-form").modal('show');

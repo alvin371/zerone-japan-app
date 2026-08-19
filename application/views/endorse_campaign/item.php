@@ -76,6 +76,10 @@ foreach ($data as $v) {
                    id="refresh-btn-<?= $v['id'] ?>">
                    <i class="bi bi-arrow-clockwise fs-16"></i> Refresh
                 </a>
+                <a href="#!" onclick="checkDuplicate('<?= $v['id'] ?>')"
+                   class="btn btn-outline-warning mt-0 ms-1 mb-2">
+                   <i class="bi bi-copy fs-16"></i> Cek Duplikat
+                </a>
                 <small class="text-muted d-block mt-0" id="sync-time-<?= $v['id'] ?>">
                     <?php if ($active_refresh_count > 0) { ?>
                         Refresh queue: <?= $pending_count ?> pending, <?= $processing_count ?> processing
