@@ -1647,7 +1647,7 @@ class Template
 
         $stats = $item['stats'] ?? ($item['statistics'] ?? ($item['engagement'] ?? []));
 
-        $createdAt = $item['created_at'] ?? ($item['timestamp'] ?? ($item['date'] ?? ($item['taken_at'] ?? '')));
+        $createdAt = $item['created_at'] ?? ($item['datetime'] ?? ($item['timestamp'] ?? ($item['date'] ?? ($item['taken_at'] ?? ''))));
         if (is_numeric($createdAt)) {
             $ts = intval($createdAt);
             if ($ts > 9999999999) {
@@ -1662,11 +1662,11 @@ class Template
         }
 
         return [
-            'like' => $this->normalizeMetricNumber($item['like_count'] ?? ($item['likes'] ?? ($stats['like_count'] ?? ($stats['likes'] ?? 0)))),
-            'share' => $this->normalizeMetricNumber($item['repost_count'] ?? ($item['share_count'] ?? ($item['shares'] ?? ($stats['repost_count'] ?? ($stats['share_count'] ?? 0))))),
-            'comment' => $this->normalizeMetricNumber($item['comment_count'] ?? ($item['reply_count'] ?? ($item['comments'] ?? ($stats['comment_count'] ?? ($stats['reply_count'] ?? 0))))),
-            'collect' => $this->normalizeMetricNumber($item['save_count'] ?? ($item['bookmark_count'] ?? ($stats['save_count'] ?? ($stats['bookmark_count'] ?? 0)))),
-            'view' => $this->normalizeMetricNumber($item['view_count'] ?? ($item['views'] ?? ($item['play_count'] ?? ($stats['view_count'] ?? ($stats['views'] ?? 0))))),
+            'like' => $this->normalizeMetricNumber($this->firstValueByKeys($item, ['like_count', 'likes'], $this->firstValueByKeys($stats, ['like_count', 'likes'], 0))),
+            'share' => $this->normalizeMetricNumber($this->firstValueByKeys($item, ['repost_count', 'reposts', 'share_count', 'shares'], $this->firstValueByKeys($stats, ['repost_count', 'share_count'], 0))),
+            'comment' => $this->normalizeMetricNumber($this->firstValueByKeys($item, ['comment_count', 'reply_count', 'comments'], $this->firstValueByKeys($stats, ['comment_count', 'reply_count'], 0))),
+            'collect' => $this->normalizeMetricNumber($this->firstValueByKeys($item, ['save_count', 'saves', 'bookmark_count'], $this->firstValueByKeys($stats, ['save_count', 'bookmark_count'], 0))),
+            'view' => $this->normalizeMetricNumber($this->firstValueByKeys($item, ['view_count', 'views', 'play_count'], $this->firstValueByKeys($stats, ['view_count', 'views'], 0))),
             'created_at' => $createdAt,
         ];
     }
