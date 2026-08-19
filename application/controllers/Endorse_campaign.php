@@ -293,6 +293,78 @@ class Endorse_campaign extends BaseController
         $this->load->view("endorse_campaign/item", $data);
     }
 
+    public function duplicate()
+    {
+        $id_campaign = intval($_GET['id_campaign']);
+
+        $data['id_campaign'] = $id_campaign;
+        $data['campaign_title'] = '';
+        $data['groups'] = [];
+        $data['checked_count'] = 0;
+
+        if ($id_campaign <= 0) {
+            $this->load->view("endorse_campaign/duplicate", $data);
+            return;
+        }
+
+        $campaign = $this->mymodel->selectWithQuery("SELECT title FROM endorse_campaign WHERE id = '$id_campaign'");
+        $data['campaign_title'] = $campaign ? $campaign[0]['title'] : '';
+
+        $rows = $this->mymodel->selectWithQuery("SELECT id, platform, link_upload
+        FROM endorse
+        WHERE id_campaign = '$id_campaign' AND link_upload IS NOT NULL AND link_upload != ''
+        ");
+
+        $data['checked_count'] = count($rows);
+
+        if (empty($rows)) {
+            $this->load->view("endorse_campaign/duplicate", $data);
+            return;
+        }
+
+        require_once APPPATH . 'libraries/EndorseDuplicateMatcher.php';
+
+        $keys = [];
+        $platforms = [];
+        foreach ($rows as $row) {
+            $key = EndorseDuplicateMatcher::identityKey($row['platform'], $row['link_upload']);
+            if ($key === null) {
+                continue;
+            }
+            $keys[$key] = true;
+            $platforms[strtolower(trim($row['platform']))] = true;
+        }
+
+        if (empty($keys)) {
+            $this->load->view("endorse_campaign/duplicate", $data);
+            return;
+        }
+
+        $platform_list = implode(',', array_map([$this->db, 'escape'], array_keys($platforms)));
+
+        $candidates = $this->mymodel->selectWithQuery("SELECT e.id, e.id_campaign, e.nama_creator, e.platform,
+            e.link_upload, e.status, e.status_endorse, e.posting_at,
+            c.title AS campaign_title, c.status AS campaign_status
+        FROM endorse e
+        INNER JOIN endorse_campaign c ON c.id = e.id_campaign
+        WHERE e.link_upload IS NOT NULL AND e.link_upload != ''
+          AND LOWER(e.platform) IN ($platform_list)
+        ORDER BY e.posting_at DESC, e.id DESC
+        ");
+
+        // Hanya konten yang juga dipakai campaign ini yang perlu dikelompokkan.
+        $related = [];
+        foreach ($candidates as $candidate) {
+            $key = EndorseDuplicateMatcher::identityKey($candidate['platform'], $candidate['link_upload']);
+            if ($key !== null && isset($keys[$key])) {
+                $related[] = $candidate;
+            }
+        }
+
+        $data['groups'] = EndorseDuplicateMatcher::groupDuplicates($related, $id_campaign);
+        $this->load->view("endorse_campaign/duplicate", $data);
+    }
+
 
     public function edit()
     {
