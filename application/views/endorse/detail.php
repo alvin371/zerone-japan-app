@@ -262,7 +262,17 @@ if (in_array($v['status_endorse'], array('Posted Content'))) {
         </div>
     </div>
 
-
+    <?php if (!empty($duplicate_endorses)) { ?>
+        <div class="alert alert-warning d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2 mb-4" role="status">
+            <div>
+                <div class="fw-600"><i class="bi bi-copy me-1"></i> Konten ini juga tercatat di campaign lain</div>
+                <div class="small">Ditemukan di <?= separator_only($duplicate_campaign_count) ?> campaign lain.</div>
+            </div>
+            <button type="button" class="btn btn-outline-dark btn-sm align-self-start align-self-md-center" data-bs-toggle="modal" data-bs-target="#duplicate-endorse-modal">
+                Lihat duplicate
+            </button>
+        </div>
+    <?php } ?>
 
     <div class="row">
         <?php
@@ -456,6 +466,66 @@ if (in_array($v['status_endorse'], array('Posted Content'))) {
 
     <?= $pagination ?>
 </div>
+
+<?php if (!empty($duplicate_endorses)) { ?>
+    <div class="modal fade" id="duplicate-endorse-modal" tabindex="-1" aria-labelledby="duplicate-endorse-modal-title" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="duplicate-endorse-modal-title">Duplicate post di campaign lain</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                </div>
+                <div class="modal-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Campaign</th>
+                                    <th>Creator</th>
+                                    <th>Status</th>
+                                    <th>Tanggal Posting</th>
+                                    <th class="text-end">Link</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($duplicate_endorses as $duplicate) { ?>
+                                    <?php
+                                    $duplicatePostingAt = !empty($duplicate['posting_at'])
+                                        ? date('d/m/Y', strtotime($duplicate['posting_at']))
+                                        : '-';
+                                    $duplicateCampaignTitle = trim((string) ($duplicate['campaign_title'] ?? ''));
+                                    if ($duplicateCampaignTitle === '') {
+                                        $duplicateCampaignTitle = 'Campaign #' . (int) ($duplicate['id_campaign'] ?? 0);
+                                    }
+                                    ?>
+                                    <tr>
+                                        <td>
+                                            <a href="<?= base_url() ?>endorse?id_campaign=<?= (int) $duplicate['id_campaign'] ?>" class="fw-600 text-decoration-none">
+                                                <?= html_escape($duplicateCampaignTitle) ?>
+                                            </a>
+                                            <div class="small text-muted"><?= html_escape((string) ($duplicate['platform'] ?? '-')) ?></div>
+                                            <div class="small text-muted">Campaign: <?= html_escape((string) ($duplicate['campaign_status'] ?? '-')) ?></div>
+                                        </td>
+                                        <td><?= html_escape((string) ($duplicate['nama_creator'] ?? '-')) ?></td>
+                                        <td>
+                                            <div><?= html_escape((string) ($duplicate['status_endorse'] ?? '-')) ?></div>
+                                            <div class="small text-muted">Data: <?= html_escape((string) ($duplicate['status'] ?? '-')) ?></div>
+                                        </td>
+                                        <td><?= html_escape($duplicatePostingAt) ?></td>
+                                        <td class="text-end">
+                                            <a href="<?= base_url() ?>endorse/detail?id=<?= (int) $duplicate['id'] ?>" class="btn btn-sm btn-outline-primary mb-1">Detail</a>
+                                            <a href="<?= html_escape((string) $duplicate['link_upload']) ?>" class="btn btn-sm btn-outline-secondary mb-1" target="_blank" rel="noopener noreferrer">Post</a>
+                                        </td>
+                                    </tr>
+                                <?php } ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+<?php } ?>
 
 <div class="modal fade bd-example-modal-lg" tabindex="-1" varietas="dialog" aria-labelledby="mySmallModalLabel" aria-hidden="true" id="modal-form">
     <div class="modal-dialog modal-lg">
