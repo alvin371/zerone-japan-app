@@ -1218,30 +1218,10 @@ class Template
                 }
             }
         } else if ($type == "Threads") {
-            if ($url) {
-                if (empty($influencer_id)) {
-                    $response["status"] = false;
-                    $response["msg"] = "influencer_id diperlukan untuk mengambil data Threads";
-                    return $response;
-                }
-
-                $metrics = $this->get_threads_metrics_from_official_api($url, $influencer_id);
-
-                if (!empty($metrics['error'])) {
-                    $response["status"] = false;
-                    $response["msg"] = $metrics['error'];
-                } else {
-                    $response["data"]["content_id"] = $metrics['thread_id'] ?? '';
-                    $response["data"]["view"] = intval($metrics['views'] ?? 0);
-                    $response["data"]["like"] = intval($metrics['likes'] ?? 0);
-                    $response["data"]["comment"] = intval($metrics['replies'] ?? 0);
-                    $response["data"]["share"] = intval($metrics['reposts'] ?? 0);
-                    $response["data"]["collect"] = intval($metrics['quotes'] ?? 0);
-                }
-            } else {
-                $response["status"] = false;
-                $response["msg"] = "URL tidak ditemukan";
-            }
+            // Threads is scraper-backed and asynchronous. Keep the synchronous adapter
+            // from issuing Graph/OAuth requests; the scraping queue owns this lifecycle.
+            $response["status"] = false;
+            $response["msg"] = "Threads post sync berjalan async via queue";
         } else if ($type == "Youtube") {
             if ($url) {
                 $youtube = $this->get_youtube_video_metrics_from_public_api($url);
@@ -1566,6 +1546,26 @@ class Template
             return $result;
         }
 
+        // Acneno's profile job is completed from the account and posts endpoints.
+        if (isset($data['account']) && is_array($data['account'])) {
+            $account = $data['account'];
+            $result['profile']['account_id'] = '';
+            $result['profile']['follower'] = intval($account['followers'] ?? 0);
+            $result['profile']['media_count'] = intval($account['post_count'] ?? 0);
+            $result['profile']['full_name'] = strval($account['display_name'] ?? ($account['username'] ?? ''));
+            foreach (array_slice(is_array($data['posts'] ?? null) ? $data['posts'] : [], 0, 10) as $post) {
+                if (!is_array($post)) continue;
+                $result['posts'][] = [
+                    'like' => intval($post['likes'] ?? 0),
+                    'comment' => intval($post['comments'] ?? 0),
+                    'share' => intval($post['shares'] ?? 0),
+                    'collect' => 0,
+                    'view' => intval($post['views'] ?? 0),
+                ];
+            }
+            return $result;
+        }
+
         $allPosts = [];
         if (isset($data[0]) && is_array($data[0])) {
             $allPosts = $data;
@@ -1876,7 +1876,7 @@ class Template
             return false;
         }
 
-        if (empty($parsed['profile']['account_id']) && $parsed['profile']['follower'] <= 0) {
+        if ($scraper !== 'threadsProfile' && empty($parsed['profile']['account_id']) && $parsed['profile']['follower'] <= 0) {
             log_message('error', "ScrapingBot: Empty parse result for {$entityType}#{$entityId}, skipping update");
             return false;
         }
@@ -1884,13 +1884,15 @@ class Template
         $userId = strval($_SESSION['user']['id'] ?? '1');
 
         $profileUpdate = [
-            'account_id' => $parsed['profile']['account_id'],
-            'img' => $parsed['profile']['img'],
             'follower' => $parsed['profile']['follower'],
             'media_count' => $parsed['profile']['media_count'],
             'updated_at' => date('Y-m-d H:i:s'),
             'updated_by' => $userId,
         ];
+        if ($scraper !== 'threadsProfile') {
+            $profileUpdate['account_id'] = $parsed['profile']['account_id'];
+            $profileUpdate['img'] = $parsed['profile']['img'];
+        }
         if (!empty($parsed['profile']['full_name'])) {
             $profileUpdate['full_name'] = $parsed['profile']['full_name'];
         }
@@ -1972,6 +1974,12 @@ class Template
                     $CI->db->insert('influencer_logs', $logData);
                 }
             }
+        } else {
+            $CI->db->update($entityType, [
+                'sync_at' => date('Y-m-d H:i:s'),
+                'updated_at' => date('Y-m-d H:i:s'),
+                'updated_by' => $userId,
+            ], ['id' => $entityId]);
         }
 
         return true;

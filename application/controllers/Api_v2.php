@@ -5209,6 +5209,7 @@ class Api_v2 extends CI_Controller
         }
 
         $this->load->library('scrapingbot');
+        $this->load->library('Threads_scraper_api');
         $this->load->model('mymodel');
 
         $items = $this->mymodel->selectWithQuery("
@@ -5233,7 +5234,28 @@ class Api_v2 extends CI_Controller
                 continue;
             }
 
-            $result = $this->scrapingbot->startScrape($item['scraper'], $params);
+            if ($item['scraper'] === 'threadsProfile') {
+                $remote = $this->threads_scraper_api->createAccount(strval($params['url'] ?? ''));
+                $data = is_array($remote['data'] ?? null) ? $remote['data'] : [];
+                if (!empty($remote['status']) && !empty($data['job_id']) && !empty($data['account']['id'])) {
+                    $params['account_id'] = $data['account']['id'];
+                    $this->db->update('scraping_queue', [
+                        'status' => 'submitted',
+                        'response_id' => $data['job_id'],
+                        'scrape_url' => json_encode($params),
+                        'submitted_at' => date('Y-m-d H:i:s'),
+                        'error_message' => null,
+                    ], ['id' => $item['id']]);
+                    $submitted++;
+                    continue;
+                }
+                $result = [
+                    'status' => false,
+                    'msg' => $remote['msg'] ?? 'Gagal membuat job profile Threads.',
+                ];
+            } else {
+                $result = $this->scrapingbot->startScrape($item['scraper'], $params);
+            }
             if ($result['status'] && !empty($result['responseId'])) {
                 $this->db->update('scraping_queue', [
                     'status' => 'submitted',
@@ -5283,6 +5305,7 @@ class Api_v2 extends CI_Controller
         }
 
         $this->load->library('scrapingbot');
+        $this->load->library('Threads_scraper_api');
         $this->load->model('mymodel');
 
         $items = $this->mymodel->selectWithQuery("
@@ -5296,8 +5319,82 @@ class Api_v2 extends CI_Controller
         $completed = 0;
         $pending = 0;
         $failed = 0;
+        $jobTimeout = max(60, intval(env('SOCIAL_SCRAPER_JOB_TIMEOUT_SEC', 900)));
 
         foreach ($items as $item) {
+            if ($item['scraper'] === 'threadsProfile') {
+                $params = json_decode($item['scrape_url'], true) ?: [];
+                $job = $this->threads_scraper_api->job(strval($item['response_id']));
+                if (empty($job['status'])) {
+                    // A transport failure must not discard the remote job id: retrying
+                    // submit here would create duplicate account jobs.
+                    $this->db->update('scraping_queue', [
+                        'error_message' => strval($job['msg'] ?? 'Gagal memeriksa job Threads.'),
+                    ], ['id' => $item['id']]);
+                    $pending++;
+                    continue;
+                }
+
+                $remote = is_array($job['data'] ?? null) ? $job['data'] : [];
+                $remoteStatus = strval($remote['status'] ?? '');
+                if (in_array($remoteStatus, ['pending', 'running'], true)) {
+                    $submittedAt = strtotime(strval($item['submitted_at'] ?? '')) ?: time();
+                    if ((time() - $submittedAt) >= $jobTimeout) {
+                        $attempts = intval($item['attempts']) + 1;
+                        $newStatus = ($attempts >= intval($item['max_attempts'])) ? 'failed' : 'pending';
+                        $this->db->update('scraping_queue', [
+                            'attempts' => $attempts,
+                            'status' => $newStatus,
+                            'response_id' => null,
+                            'error_message' => 'Job Threads melewati batas waktu.',
+                            'completed_at' => $newStatus === 'failed' ? date('Y-m-d H:i:s') : null,
+                        ], ['id' => $item['id']]);
+                        $failed++;
+                        continue;
+                    }
+                    $pending++;
+                    continue;
+                }
+                if ($remoteStatus === 'completed' && !empty($params['account_id'])) {
+                    $account = $this->threads_scraper_api->account(strval($params['account_id']));
+                    $posts = $this->threads_scraper_api->posts(strval($params['account_id']), 10);
+                    if (!empty($account['status']) && !empty($posts['status'])) {
+                        $data = ['account' => $account['data'], 'posts' => $posts['data']];
+                        $item['result_data'] = json_encode($data);
+                        if ($this->template->process_scrape_result($item, $data)) {
+                            $this->db->update('scraping_queue', [
+                                'status' => 'completed', 'result_data' => json_encode($data),
+                                'completed_at' => date('Y-m-d H:i:s'),
+                                'attempts' => intval($item['attempts']) + 1,
+                                'error_message' => null,
+                            ], ['id' => $item['id']]);
+                            $completed++;
+                            continue;
+                        }
+                    } else {
+                        // Keep the completed remote job associated with the queue row while
+                        // account/posts endpoints recover; do not submit another profile job.
+                        $this->db->update('scraping_queue', [
+                            'error_message' => strval((!empty($account['status']) ? $posts['msg'] : $account['msg']) ?? 'Gagal mengambil profile Threads.'),
+                        ], ['id' => $item['id']]);
+                        $pending++;
+                        continue;
+                    }
+                }
+
+                $attempts = intval($item['attempts']) + 1;
+                $newStatus = ($attempts >= intval($item['max_attempts'])) ? 'failed' : 'pending';
+                $this->db->update('scraping_queue', [
+                    'attempts' => $attempts,
+                    'status' => $newStatus,
+                    'response_id' => null,
+                    'error_message' => strval($remote['error'] ?? ($job['msg'] ?? 'Job Threads gagal.')),
+                    'completed_at' => $newStatus === 'failed' ? date('Y-m-d H:i:s') : null,
+                ], ['id' => $item['id']]);
+                $failed++;
+                continue;
+            }
+
             $result = $this->scrapingbot->pollResult($item['scraper'], $item['response_id']);
 
             if ($result['status'] === 'success') {
