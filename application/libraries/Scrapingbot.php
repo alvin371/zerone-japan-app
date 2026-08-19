@@ -9,13 +9,14 @@ class Scrapingbot
     private $threadsScrapBaseUrl;
     private $threadsScrapApiKey;
     private $threadsScrapTimeout;
+    private $threadsApi;
 
     public function __construct()
     {
         $this->username = env('SCRAPINGBOT_USERNAME', '');
         $this->apiKey = env('SCRAPINGBOT_API_KEY', '');
         $this->baseUrl = rtrim(env('SCRAPINGBOT_BASE_URL', 'http://api.scraping-bot.io'), '/');
-        $this->threadsScrapBaseUrl = rtrim(env('THREADS_SCRAP_BASE_URL', 'http://scrap.acnenosystem.com'), '/');
+        $this->threadsScrapBaseUrl = rtrim(env('THREADS_SCRAP_BASE_URL', 'https://scrap.acnenosystem.com'), '/');
         $this->threadsScrapApiKey = env('THREADS_SCRAP_API_KEY', '');
         $this->threadsScrapTimeout = intval(env('THREADS_SCRAP_TIMEOUT', '30'));
         if ($this->threadsScrapTimeout <= 0) {
@@ -167,14 +168,6 @@ class Scrapingbot
 
     private function startThreadsScrape($scraper, $params = array())
     {
-        if ($this->threadsScrapApiKey === '') {
-            return array(
-                'status' => false,
-                'responseId' => null,
-                'msg' => 'THREADS_SCRAP_API_KEY belum diatur',
-            );
-        }
-
         $url = trim(strval($params['url'] ?? ''));
         if ($url === '') {
             return array(
@@ -184,19 +177,21 @@ class Scrapingbot
             );
         }
 
-        $path = ($scraper === 'threadsPost') ? '/api/v1/posts/scrape' : '/api/v1/accounts';
-        $request = $this->threadsApiRequest('POST', $path, array('link' => $url));
+        $request = $this->threadsClient()->createAccount($url);
+        if ($scraper === 'threadsPost') {
+            $request = $this->threadsClient()->scrapePost($url);
+        }
 
-        if (!$request['ok']) {
+        if (empty($request['status'])) {
             return array(
                 'status' => false,
                 'responseId' => null,
-                'msg' => 'Failed to start scrape: ' . $request['msg'],
+                'msg' => 'Failed to start scrape: ' . ($request['msg'] ?? 'Social Scraper error'),
             );
         }
 
         $data = $request['data'];
-        $jobId = strval($data['job_id'] ?? ($data['id'] ?? ''));
+        $jobId = strval($data['job_id'] ?? '');
         if ($jobId === '') {
             return array(
                 'status' => false,
@@ -214,14 +209,6 @@ class Scrapingbot
 
     private function pollThreadsResult($scraper, $responseId)
     {
-        if ($this->threadsScrapApiKey === '') {
-            return array(
-                'status' => 'error',
-                'data' => null,
-                'msg' => 'THREADS_SCRAP_API_KEY belum diatur',
-            );
-        }
-
         $jobId = trim(strval($responseId));
         if ($jobId === '') {
             return array(
@@ -231,35 +218,23 @@ class Scrapingbot
             );
         }
 
-        $request = $this->threadsApiRequest('GET', '/api/v1/jobs/' . rawurlencode($jobId));
-        if (!$request['ok']) {
-            if ($request['http_code'] >= 500) {
-                return array(
-                    'status' => 'pending',
-                    'data' => null,
-                    'msg' => 'Scrape still processing',
-                );
-            }
-
-            return array(
-                'status' => 'error',
-                'data' => null,
-                'msg' => 'Scrape failed: ' . $request['msg'],
-            );
+        $request = $this->threadsClient()->job($jobId);
+        if (empty($request['status'])) {
+            return array('status' => 'pending', 'data' => null, 'msg' => $request['msg'] ?? 'Scrape still processing');
         }
 
         $data = $request['data'];
         $status = strtolower(trim(strval($data['status'] ?? '')));
 
-        if (in_array($status, array('completed', 'success', 'done'), true)) {
+        if ($status === 'completed') {
             return array(
                 'status' => 'success',
-                'data' => $this->normalizeThreadsJobResult($scraper, $data),
+                'data' => is_array($data['result'] ?? null) ? $data['result'] : array(),
                 'msg' => 'Scrape completed',
             );
         }
 
-        if (in_array($status, array('pending', 'queued', 'processing', 'started', 'running', 'in_progress'), true)) {
+        if (in_array($status, array('pending', 'running'), true)) {
             return array(
                 'status' => 'pending',
                 'data' => null,
@@ -267,7 +242,7 @@ class Scrapingbot
             );
         }
 
-        if (in_array($status, array('failed', 'error', 'cancelled', 'canceled'), true)) {
+        if ($status === 'failed') {
             $errorMsg = strval($data['error'] ?? ($data['message'] ?? 'Scrape failed'));
             return array(
                 'status' => 'error',
@@ -276,19 +251,25 @@ class Scrapingbot
             );
         }
 
-        if (isset($data['result'])) {
-            return array(
-                'status' => 'success',
-                'data' => $this->normalizeThreadsJobResult($scraper, $data),
-                'msg' => 'Scrape completed',
-            );
-        }
-
         return array(
             'status' => 'pending',
             'data' => null,
             'msg' => 'Scrape still processing',
         );
+    }
+
+    private function threadsClient()
+    {
+        if (!$this->threadsApi) {
+            require_once APPPATH . 'libraries/Threads_scraper_api.php';
+            $this->threadsApi = new Threads_scraper_api(array(
+                'base_url' => $this->threadsScrapBaseUrl,
+                'api_key' => $this->threadsScrapApiKey,
+                'timeout' => $this->threadsScrapTimeout,
+            ));
+        }
+
+        return $this->threadsApi;
     }
 
     private function normalizeThreadsJobResult($scraper, $jobData)

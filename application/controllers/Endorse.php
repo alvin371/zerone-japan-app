@@ -1478,6 +1478,16 @@ class Endorse extends BaseController
             die;
         }
 
+        if ($endorse['platform'] === 'Threads') {
+            $queued = $this->template->enqueue_post_scrape('endorse', $id, 'Threads', $endorse['link_upload'], 10);
+            if (!empty($queued['status'])) {
+                echo $this->template->alert_success('Refresh Threads ditambahkan ke antrian.');
+            } else {
+                echo $this->template->alert_danger($queued['msg'] ?? 'Gagal menambahkan refresh Threads ke antrian.');
+            }
+            return;
+        }
+
         $response = $this->template->get_social_media($endorse['platform'], $endorse['link_upload']);
 
         $this->load->library('endorse_sync');
