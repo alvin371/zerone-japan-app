@@ -992,11 +992,61 @@ class Endorse extends BaseController
         FROM endorse WHERE id = '$id'");
         $data['detail'] = $data['detail'][0];
 
+        $data['duplicate_endorses'] = $this->findDuplicateEndorses($data['detail']);
+        $data['duplicate_campaign_count'] = count(array_unique(array_map(
+            static function ($duplicate) {
+                return (string) ($duplicate['id_campaign'] ?? '');
+            },
+            $data['duplicate_endorses']
+        )));
+
         $data['title_2'] = $this->template->date_format_indo($start_date) . ' - ' . $this->template->date_format_indo($until_date);
 
 
         $data['content'] = $this->load->view("endorse/detail", $data, true);
         $this->load->view("TemplateDashboard", $data);
+    }
+
+    private function findDuplicateEndorses(array $endorse): array
+    {
+        $link = trim((string) ($endorse['link_upload'] ?? ''));
+        $campaignId = (int) ($endorse['id_campaign'] ?? 0);
+        $endorseId = (int) ($endorse['id'] ?? 0);
+        $platform = strtolower(trim((string) ($endorse['platform'] ?? '')));
+
+        if ($link === '' || $campaignId <= 0 || $endorseId <= 0 || $platform === '') {
+            return [];
+        }
+
+        require_once APPPATH . 'libraries/EndorseDuplicateMatcher.php';
+
+        $this->db->select(
+            'e.id, e.id_campaign, e.nama_creator, e.platform, e.link_upload, '
+            . 'e.status, e.status_endorse, e.posting_at, '
+            . 'c.title AS campaign_title, c.status AS campaign_status'
+        );
+        $this->db->from('endorse e');
+        $this->db->join('endorse_campaign c', 'c.id = e.id_campaign', 'inner');
+        $this->db->where('e.id !=', $endorseId);
+        $this->db->where('e.id_campaign !=', $campaignId);
+        $this->db->where('e.link_upload !=', '');
+        $this->db->where(
+            'LOWER(e.platform) = ' . $this->db->escape($platform),
+            null,
+            false
+        );
+        $this->db->order_by('e.posting_at', 'DESC');
+        $this->db->order_by('e.id', 'DESC');
+
+        $candidates = $this->db->get()->result_array();
+        $matches = [];
+        foreach ($candidates as $candidate) {
+            if (EndorseDuplicateMatcher::matches($endorse, $candidate)) {
+                $matches[] = $candidate;
+            }
+        }
+
+        return $matches;
     }
 
     public function item()
