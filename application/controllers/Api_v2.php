@@ -5261,8 +5261,11 @@ class Api_v2 extends CI_Controller
                     'status' => 'submitted',
                     'response_id' => $result['responseId'],
                     'submitted_at' => date('Y-m-d H:i:s'),
+                    'next_poll_at' => date('Y-m-d H:i:s', time() + 5),
+                    'poll_attempts' => 0,
                     'error_message' => null,
                 ], ['id' => $item['id']]);
+                log_message('info', 'Threads scrape submitted queue_id=' . intval($item['id']) . ' endorse_id=' . intval($item['entity_id']) . ' external_job_id=' . $result['responseId']);
                 $submitted++;
             } else {
                 $attempts = intval($item['attempts']) + 1;
@@ -5312,6 +5315,7 @@ class Api_v2 extends CI_Controller
             SELECT * FROM scraping_queue
             WHERE status = 'submitted'
             AND attempts < max_attempts
+            AND (next_poll_at IS NULL OR next_poll_at <= NOW())
             ORDER BY submitted_at ASC
             LIMIT 10
         ");
@@ -5398,19 +5402,62 @@ class Api_v2 extends CI_Controller
             $result = $this->scrapingbot->pollResult($item['scraper'], $item['response_id']);
 
             if ($result['status'] === 'success') {
+                $persisted = true;
+                $persistError = null;
+                if ($item['scraper'] === 'threadsPost' && $item['entity_type'] === 'endorse') {
+                    $params = json_decode($item['scrape_url'], true) ?: [];
+                    $mapped = Threads_scraper_api::normalizePostResult(
+                        is_array($result['data']) ? $result['data'] : [],
+                        strval($params['url'] ?? ''),
+                        'threads'
+                    );
+                    $endorse = $this->db->where('id', intval($item['entity_id']))->get('endorse')->row_array();
+                    $this->load->library('endorse_sync');
+                    $write = $endorse ? $this->endorse_sync->apply($endorse, $mapped, 0) : ['status' => false, 'msg' => 'Endorse tidak ditemukan'];
+                    $persisted = !empty($write['status']);
+                    $persistError = $write['msg'] ?? null;
+                    if ($persisted) {
+                        $this->endorse_sync->update_campaign_parent(intval($endorse['id_campaign']), 0);
+                    }
+                } else {
+                    $persisted = (bool) $this->template->process_scrape_result($item, $result['data']);
+                    $persistError = 'Gagal menyimpan hasil scraper.';
+                }
+                if (!$persisted) {
+                    $this->db->update('scraping_queue', [
+                        'status' => 'failed', 'completed_at' => date('Y-m-d H:i:s'),
+                        'error_message' => $persistError ?: 'Gagal menyimpan hasil scraper.',
+                    ], ['id' => $item['id']]);
+                    log_message('error', 'Scrape persist failed queue_id=' . intval($item['id']) . ' endorse_id=' . intval($item['entity_id']) . ' reason=' . ($persistError ?: 'unknown'));
+                    $failed++;
+                    continue;
+                }
                 $this->db->update('scraping_queue', [
                     'status' => 'completed',
                     'result_data' => json_encode($result['data']),
+                    'external_post_id' => strval($result['data']['id'] ?? $result['data']['post_id'] ?? ''),
                     'completed_at' => date('Y-m-d H:i:s'),
-                    'attempts' => intval($item['attempts']) + 1,
                     'error_message' => null,
                 ], ['id' => $item['id']]);
-
-                $this->template->process_scrape_result($item, $result['data']);
+                log_message('info', 'Scrape completed queue_id=' . intval($item['id']) . ' endorse_id=' . intval($item['entity_id']) . ' external_job_id=' . strval($item['response_id']));
                 $completed++;
             } else if ($result['status'] === 'pending') {
+                $submittedAt = strtotime(strval($item['submitted_at'] ?? '')) ?: time();
+                if ((time() - $submittedAt) >= $jobTimeout) {
+                    $this->db->update('scraping_queue', [
+                        'status' => 'failed', 'completed_at' => date('Y-m-d H:i:s'),
+                        'error_message' => 'Job scraper melewati batas waktu.', 'worker_id' => null,
+                    ], ['id' => $item['id']]);
+                    log_message('error', 'Scrape timed out queue_id=' . intval($item['id']) . ' endorse_id=' . intval($item['entity_id']) . ' external_job_id=' . strval($item['response_id']));
+                    $failed++;
+                    continue;
+                }
+                $pollAttempts = intval($item['poll_attempts'] ?? 0) + 1;
+                $delay = min(60, max(5, 5 * (2 ** min(4, $pollAttempts - 1))));
                 $this->db->update('scraping_queue', [
-                    'attempts' => intval($item['attempts']) + 1,
+                    'poll_attempts' => $pollAttempts,
+                    'last_polled_at' => date('Y-m-d H:i:s'),
+                    'next_poll_at' => date('Y-m-d H:i:s', time() + $delay),
                 ], ['id' => $item['id']]);
                 $pending++;
             } else {
