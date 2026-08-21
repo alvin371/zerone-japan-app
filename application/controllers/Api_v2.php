@@ -5221,6 +5221,7 @@ class Api_v2 extends CI_Controller
 
         $submitted = 0;
         $errors = [];
+        $threadsInitialGrace = max(5, min(120, intval(env('THREADS_SCRAP_INITIAL_GRACE_SEC', 15))));
 
         foreach ($items as $item) {
             $params = json_decode($item['scrape_url'], true);
@@ -5257,22 +5258,29 @@ class Api_v2 extends CI_Controller
                 $result = $this->scrapingbot->startScrape($item['scraper'], $params);
             }
             if ($result['status'] && !empty($result['responseId'])) {
+                $maxAttempts = $item['scraper'] === 'threadsPost' ? Template::THREADS_POST_MAX_ATTEMPTS : max(1, intval($item['max_attempts']));
                 $this->db->update('scraping_queue', [
                     'status' => 'submitted',
                     'response_id' => $result['responseId'],
                     'submitted_at' => date('Y-m-d H:i:s'),
-                    'next_poll_at' => date('Y-m-d H:i:s', time() + 5),
+                    // Threads is asynchronous. Give the provider time to build the
+                    // result before the first poll instead of treating an immediate
+                    // queued/running response as a scrape failure.
+                    'next_poll_at' => date('Y-m-d H:i:s', time() + ($item['scraper'] === 'threadsPost' ? $threadsInitialGrace : 5)),
                     'poll_attempts' => 0,
+                    'max_attempts' => $maxAttempts,
                     'error_message' => null,
                 ], ['id' => $item['id']]);
                 log_message('info', 'Threads scrape submitted queue_id=' . intval($item['id']) . ' endorse_id=' . intval($item['entity_id']) . ' external_job_id=' . $result['responseId']);
                 $submitted++;
             } else {
                 $attempts = intval($item['attempts']) + 1;
-                $newStatus = ($attempts >= intval($item['max_attempts'])) ? 'failed' : 'pending';
+                $maxAttempts = $item['scraper'] === 'threadsPost' ? Template::THREADS_POST_MAX_ATTEMPTS : max(1, intval($item['max_attempts']));
+                $newStatus = ($attempts >= $maxAttempts) ? 'failed' : 'pending';
 
                 $this->db->update('scraping_queue', [
                     'attempts' => $attempts,
+                    'max_attempts' => $maxAttempts,
                     'status' => $newStatus,
                     'error_message' => $result['msg'] ?? 'Submit failed',
                     'completed_at' => ($newStatus === 'failed') ? date('Y-m-d H:i:s') : null,
