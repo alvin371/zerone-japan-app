@@ -1510,7 +1510,11 @@ class Endorse extends BaseController
     public function sync_process()
     {
         $user = $_SESSION['user'];
-        $id = intval($_POST['id']);
+        $json = [];
+        if (stripos((string) $this->input->get_request_header('Content-Type'), 'application/json') !== false) {
+            $json = json_decode((string) file_get_contents('php://input'), true) ?: [];
+        }
+        $id = intval($json['id'] ?? $this->input->post('id'));
 
         $query = $this->mymodel->selectWithQuery("SELECT * FROM endorse WHERE id = '$id'");
         if (empty($query)) {
@@ -1530,8 +1534,22 @@ class Endorse extends BaseController
 
         if ($endorse['platform'] === 'Threads') {
             $queued = $this->template->enqueue_post_scrape('endorse', $id, 'Threads', $endorse['link_upload'], 10);
+            $acceptsJson = stripos((string) $this->input->get_request_header('Accept'), 'application/json') !== false || !empty($json);
+            if ($acceptsJson) {
+                $code = !empty($queued['status']) ? (!empty($queued['duplicate']) ? 200 : 202) : 422;
+                return $this->output->set_status_header($code)->set_content_type('application/json')->set_output(json_encode([
+                    'status' => !empty($queued['status']),
+                    'state' => $queued['state'] ?? (!empty($queued['status']) ? 'accepted' : 'failed'),
+                    'queue_id' => $queued['queue_id'] ?? null,
+                    'external_job_id' => $queued['external_job_id'] ?? null,
+                    'msg' => $queued['msg'] ?? 'Gagal menambahkan refresh Threads ke antrian.',
+                ]));
+            }
             if (!empty($queued['status'])) {
-                echo $this->template->alert_success('Refresh Threads ditambahkan ke antrian.');
+                $msg = !empty($queued['duplicate'])
+                    ? 'Refresh Threads sedang diproses; job aktif tidak diduplikasi.'
+                    : 'Refresh Threads diterima ke antrian.';
+                echo $this->template->alert_success($msg);
             } else {
                 echo $this->template->alert_danger($queued['msg'] ?? 'Gagal menambahkan refresh Threads ke antrian.');
             }
@@ -1830,6 +1848,45 @@ class Endorse extends BaseController
             $summary[$row['status']] = intval($row['c']);
         }
 
+        // Threads jobs live in scraping_queue because their provider is
+        // asynchronous. Present them in the same campaign queue read model.
+        if ($this->db->table_exists('scraping_queue')) {
+            $threadWhere = ["q.entity_type = 'endorse'", "q.scraper = 'threadsPost'"];
+            if ($since_hours > 0) $threadWhere[] = "COALESCE(q.completed_at, q.submitted_at, q.created_at) >= (NOW() - INTERVAL $since_hours HOUR)";
+            if ($id_campaign > 0) $threadWhere[] = "q.id_campaign = '$id_campaign'";
+            $threadStatus = [];
+            $requested = is_array($statusParam) ? $statusParam : explode(',', strval($statusParam));
+            foreach ($requested as $s) {
+                if ($s === 'processing') { $threadStatus[] = "'submitted'"; $threadStatus[] = "'polling'"; }
+                elseif (in_array($s, ['pending','completed','failed'], true)) $threadStatus[] = "'" . $s . "'";
+            }
+            if (!empty($threadStatus)) $threadWhere[] = 'q.status IN (' . implode(',', array_unique($threadStatus)) . ')';
+            $threadWhereSql = 'WHERE ' . implode(' AND ', $threadWhere);
+            $threadRows = $this->mymodel->selectWithQuery("
+                SELECT q.id, q.entity_id AS id_endorse, q.id_campaign, 'Threads' AS platform,
+                       q.canonical_url AS link_upload,
+                       CASE WHEN q.status IN ('submitted','polling') THEN 'processing' ELSE q.status END AS status,
+                       q.priority, q.attempts, q.max_attempts, q.error_message,
+                       q.created_at, q.submitted_at AS started_at, q.completed_at,
+                       q.created_at AS queued_at, COALESCE(q.completed_at,q.submitted_at,q.created_at) AS activity_at,
+                       ec.title AS campaign_title, i.full_name AS influencer_name, 'scraping' AS queue_source
+                FROM scraping_queue q
+                LEFT JOIN endorse e ON e.id = q.entity_id
+                LEFT JOIN endorse_campaign ec ON ec.id = q.id_campaign
+                LEFT JOIN influencer i ON i.id = e.influencer
+                $threadWhereSql ORDER BY activity_at DESC, q.id DESC LIMIT $length
+            ");
+            foreach ($threadRows as &$threadRow) $threadRow['queue_source'] = 'scraping';
+            unset($threadRow);
+            $rows = array_merge($rows, $threadRows);
+            usort($rows, function ($a, $b) { return strcmp(strval($b['activity_at'] ?? ''), strval($a['activity_at'] ?? '')); });
+            $rows = array_slice($rows, 0, $length);
+            $total += count($threadRows);
+            foreach ($threadRows as $threadRow) $summary[$threadRow['status']] = intval($summary[$threadRow['status']] ?? 0) + 1;
+        }
+        foreach ($rows as &$row) if (empty($row['queue_source'])) $row['queue_source'] = 'endorse_refresh';
+        unset($row);
+
         $this->load->library('EndorseRefreshQueueService');
         $health = $this->endorserefreshqueueservice->computeHealth($id_campaign, 10);
 
@@ -1847,18 +1904,26 @@ class Endorse extends BaseController
     public function queue_history()
     {
         $queueId = intval($this->input->get('id'));
+        $source = $this->input->get('source') === 'scraping' ? 'scraping' : 'endorse_refresh';
         if ($queueId <= 0) {
             return $this->output
                 ->set_content_type('application/json')
                 ->set_output(json_encode(['status' => false, 'msg' => 'Queue ID tidak valid.', 'data' => []]));
         }
 
+        if ($source === 'scraping') {
+            $rows = $this->mymodel->selectWithQuery("
+                SELECT attempt_no, worker_id, status, error_class, error_message, started_at, finished_at, created_at
+                FROM scraping_queue_attempts WHERE queue_id = '$queueId' ORDER BY id DESC
+            ");
+        } else {
         $rows = $this->mymodel->selectWithQuery("
             SELECT attempt_no, worker_id, status, error_class, error_message, started_at, finished_at, created_at
             FROM endorse_refresh_queue_attempts
             WHERE queue_id = '$queueId'
             ORDER BY attempt_no DESC, id DESC
         ");
+        }
 
         return $this->output
             ->set_content_type('application/json')
@@ -1870,10 +1935,15 @@ class Endorse extends BaseController
         $this->load->library('EndorseRefreshQueueService');
         $health = $this->endorserefreshqueueservice->computeHealth(0, 10);
 
+        $threadsActive = 0;
+        if ($this->db->table_exists('scraping_queue')) {
+            $row = $this->mymodel->selectWithQuery("SELECT COUNT(*) c FROM scraping_queue WHERE entity_type='endorse' AND scraper='threadsPost' AND status IN ('pending','submitted','polling')");
+            $threadsActive = intval($row[0]['c'] ?? 0);
+        }
         $this->output
             ->set_content_type('application/json')
             ->set_output(json_encode([
-                'count' => intval($health['active_total'] ?? 0),
+                'count' => intval($health['active_total'] ?? 0) + $threadsActive,
                 'stalled' => !empty($health['is_stalled']),
                 'oldest_pending_at' => $health['oldest_pending_at'] ?? null,
             ]));
@@ -1937,10 +2007,29 @@ class Endorse extends BaseController
         if (!is_array($idsParam)) {
             $idsParam = explode(',', strval($idsParam));
         }
-        $ids = array_filter(array_map('intval', $idsParam));
+        $scrapeIds = [];
+        $legacyIds = [];
+        foreach ($idsParam as $value) {
+            $value = strval($value);
+            if (strpos($value, 'scraping:') === 0) $scrapeIds[] = intval(substr($value, 9));
+            else $legacyIds[] = intval(str_replace('endorse_refresh:', '', $value));
+        }
+        $ids = array_filter($legacyIds);
+
+        $reactivated = 0;
+        if (!empty($scrapeIds)) {
+            $list = implode(',', array_map('intval', $scrapeIds));
+            $this->db->query("UPDATE scraping_queue SET status='pending', attempts=0, poll_attempts=0, response_id=NULL, submitted_at=NULL, next_poll_at=NULL, completed_at=NULL, error_message=NULL, worker_id=NULL, lease_expires_at=NULL WHERE id IN ($list) AND entity_type='endorse' AND scraper='threadsPost' AND status='failed'");
+            $reactivated = $this->db->affected_rows();
+        }
 
         $this->load->library('EndorseRefreshQueueService');
         $result = $this->endorserefreshqueueservice->cloneFailedRows($ids, intval($user['id']));
+        if ($reactivated > 0) {
+            $result['status'] = true;
+            $result['updated'] = intval($result['updated'] ?? 0) + $reactivated;
+            $result['msg'] = $reactivated . ' job Threads diaktifkan kembali. ' . ($result['msg'] ?? '');
+        }
 
         $this->output
             ->set_content_type('application/json')

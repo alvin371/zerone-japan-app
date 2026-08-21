@@ -1328,18 +1328,62 @@ class Template
             return ['status' => false, 'msg' => 'Platform post scraping belum didukung'];
         }
 
-        $existing = $CI->db->select('id')
-            ->where('entity_type', $entityType)
-            ->where('entity_id', $entityId)
-            ->where_in('status', ['pending', 'submitted'])
-            ->get('scraping_queue')
-            ->num_rows();
-
-        if ($existing > 0) {
-            return ['status' => true, 'msg' => 'Already in queue'];
+        $campaignId = null;
+        $canonicalUrl = trim((string) $url);
+        if ($type === 'Threads') {
+            require_once APPPATH . 'libraries/Threads_scraper_api.php';
+            $canonicalUrl = Threads_scraper_api::canonicalPostUrl($url);
+            if ($canonicalUrl === '') {
+                return ['status' => false, 'state' => 'failed', 'msg' => 'URL post Threads tidak valid.'];
+            }
+            $endorse = $CI->db->select('id_campaign')->where('id', intval($entityId))->get('endorse')->row_array();
+            if (!$endorse) {
+                return ['status' => false, 'state' => 'failed', 'msg' => 'Endorse tidak ditemukan.'];
+            }
+            $campaignId = intval($endorse['id_campaign']);
+            $params['params']['url'] = $canonicalUrl;
         }
 
-        $CI->db->insert('scraping_queue', [
+        $existing = $CI->db->select('id,status,response_id,attempts,max_attempts')
+            ->where('entity_type', $entityType)
+            ->where('entity_id', $entityId)
+            ->where_in('status', ['pending', 'submitted', 'polling'])
+            ->order_by('id', 'DESC')
+            ->get('scraping_queue')
+            ->row_array();
+
+        if ($existing) {
+            return [
+                'status' => true,
+                'state' => in_array($existing['status'], ['submitted', 'polling'], true) ? 'processing' : 'accepted',
+                'duplicate' => true,
+                'queue_id' => intval($existing['id']),
+                'external_job_id' => $existing['response_id'] ?: null,
+                'msg' => 'Already in queue',
+            ];
+        }
+
+        // Failed Threads jobs are retried in place to preserve their attempt
+        // history. Completed rows deliberately remain history; a new refresh
+        // after completion is a new observation.
+        if ($type === 'Threads') {
+            $failed = $CI->db->select('id')->where('entity_type', $entityType)
+                ->where('entity_id', $entityId)->where('status', 'failed')
+                ->order_by('id', 'DESC')->get('scraping_queue')->row_array();
+            if ($failed) {
+                $CI->db->update('scraping_queue', [
+                    'status' => 'pending', 'attempts' => 0, 'response_id' => null,
+                    'submitted_at' => null, 'completed_at' => null, 'error_message' => null,
+                    'scrape_url' => json_encode($params['params']), 'id_campaign' => $campaignId,
+                    'canonical_url' => $canonicalUrl, 'next_poll_at' => null, 'poll_attempts' => 0,
+                    'worker_id' => null, 'lease_expires_at' => null,
+                ], ['id' => intval($failed['id'])]);
+                return ['status' => true, 'state' => 'accepted', 'reactivated' => true,
+                    'queue_id' => intval($failed['id']), 'msg' => 'Failed job reactivated'];
+            }
+        }
+
+        $row = [
             'entity_type' => $entityType,
             'entity_id' => intval($entityId),
             'scraper' => $params['scraper'],
@@ -1347,9 +1391,14 @@ class Template
             'status' => 'pending',
             'priority' => intval($priority),
             'created_at' => date('Y-m-d H:i:s'),
-        ]);
+        ];
+        if ($type === 'Threads') {
+            $row['id_campaign'] = $campaignId;
+            $row['canonical_url'] = $canonicalUrl;
+        }
+        $CI->db->insert('scraping_queue', $row);
 
-        return ['status' => true, 'msg' => 'Added to queue'];
+        return ['status' => true, 'state' => 'accepted', 'queue_id' => intval($CI->db->insert_id()), 'msg' => 'Added to queue'];
     }
 
     function parseTiktokProfileResponse($data)

@@ -52,7 +52,8 @@ class Threads_scraper_api
         if ($postId === '' || $permalink === '') {
             return self::failure('Hasil job Threads tidak memenuhi kontrak PostResponse.', 'transient');
         }
-        if ($expectedUrl !== '' && self::canonicalPostUrl($expectedUrl) !== self::canonicalPostUrl($permalink)) {
+        $canonicalUrl = self::canonicalPostUrl($permalink);
+        if ($canonicalUrl === '' || ($expectedUrl !== '' && self::canonicalPostUrl($expectedUrl) !== $canonicalUrl)) {
             return self::failure('Permalink hasil job Threads tidak cocok dengan konten yang diminta.', 'permanent');
         }
 
@@ -63,14 +64,22 @@ class Threads_scraper_api
                 'content_id' => $postId,
                 'like' => (int) ($post['likes'] ?? 0),
                 'comment' => (int) ($post['comments'] ?? 0),
-                'share' => (int) ($post['shares'] ?? $post['reposts'] ?? 0),
-                'collect' => null,
+                // Legacy endorse stores reposts and saves in share_save. Keep the
+                // individual values in the job result as well so zero is not lost.
+                'share' => (int) ($post['reposts'] ?? $post['shares'] ?? 0),
+                'collect' => (int) ($post['saves'] ?? 0),
                 'view' => (int) ($post['views'] ?? 0),
                 'media_type' => (string) ($post['media_type'] ?? ''),
                 'cover' => (string) ($post['media_url'] ?? $post['image_url'] ?? ''),
                 'video_link' => '',
                 'created_at' => (string) ($post['posted_at'] ?? $post['datetime'] ?? ''),
-                'url' => $permalink,
+                'url' => $canonicalUrl,
+                'reposts' => (int) ($post['reposts'] ?? $post['shares'] ?? 0),
+                'saves' => (int) ($post['saves'] ?? 0),
+                'quotes' => (int) ($post['quotes'] ?? 0),
+                'caption' => (string) ($post['caption'] ?? $post['message'] ?? ''),
+                'account' => (string) ($post['account'] ?? ''),
+                'author_id' => (string) ($post['author_id'] ?? ''),
             ],
             'stats_fields' => ['like', 'comment', 'share', 'view'],
             'stats_source' => 'threads_scraper',
@@ -125,13 +134,15 @@ class Threads_scraper_api
         return ['status' => true, 'msg' => 'OK', 'data' => $data, 'http_status' => $status];
     }
 
-    protected static function canonicalPostUrl(string $url): string
+    public static function canonicalPostUrl(string $url): string
     {
         $parts = parse_url(trim($url));
         if (!is_array($parts)) return '';
         $host = strtolower(preg_replace('#^www\\.#', '', (string) ($parts['host'] ?? '')));
-        if ($host === 'threads.com') $host = 'threads.net';
-        return $host . rtrim((string) ($parts['path'] ?? ''), '/');
+        if (!in_array($host, ['threads.com', 'threads.net'], true)) return '';
+        $path = rtrim((string) ($parts['path'] ?? ''), '/');
+        if (!preg_match('#^/@[^/]+/post/[^/]+$#', $path)) return '';
+        return 'https://www.threads.net' . $path;
     }
 
     protected static function failure(string $msg, string $class, int $httpStatus = 0): array

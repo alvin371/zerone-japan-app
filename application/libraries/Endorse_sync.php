@@ -105,6 +105,7 @@ class Endorse_sync
         }
 
         $db = $this->CI->db;
+        $db->trans_begin();
         $today = date('Y-m-d');
         $id_endorse = intval($endorse['id']);
 
@@ -178,7 +179,10 @@ class Endorse_sync
             $endorseUpdate['tiktok_fetched_at'] = date('Y-m-d H:i:s');
         }
 
-        $db->update('endorse', $endorseUpdate, ['id' => $id_endorse]);
+        if (!$db->update('endorse', $endorseUpdate, ['id' => $id_endorse])) {
+            $db->trans_rollback();
+            return ['status' => false, 'error_class' => self::ERR_TRANSIENT, 'msg' => 'Gagal memperbarui endorse.'];
+        }
 
         $existing = $this->CI->mymodel->selectWithQuery("
             SELECT id FROM endorse_logs
@@ -227,12 +231,18 @@ class Endorse_sync
         if ($existing_log_id) {
             $logRow['updated_at'] = date('Y-m-d H:i:s');
             $logRow['updated_by'] = strval($user_id);
-            $db->update('endorse_logs', $logRow, ['id' => $existing_log_id]);
+            $written = $db->update('endorse_logs', $logRow, ['id' => $existing_log_id]);
         } else {
             $logRow['created_at'] = date('Y-m-d H:i:s');
             $logRow['created_by'] = strval($user_id);
-            $db->insert('endorse_logs', $logRow);
+            $written = $db->insert('endorse_logs', $logRow);
         }
+
+        if (empty($written) || !$db->trans_status()) {
+            $db->trans_rollback();
+            return ['status' => false, 'error_class' => self::ERR_TRANSIENT, 'msg' => 'Gagal menyimpan log endorse.'];
+        }
+        $db->trans_commit();
 
         return [
             'status' => true,
