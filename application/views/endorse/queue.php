@@ -238,7 +238,7 @@ $campaigns = isset($campaigns) ? $campaigns : [];
         $banner.addClass('stalled').html(html).show();
     }
 
-    function openHistory(queueId, meta) {
+    function openHistory(queueId, meta, source) {
         if (!historyModal && window.bootstrap && bootstrap.Modal) {
             historyModal = new bootstrap.Modal(document.getElementById('queueHistoryModal'));
         }
@@ -253,7 +253,7 @@ $campaigns = isset($campaigns) ? $campaigns : [];
         $.ajax({
             url: baseUrl + 'endorse/queue-history',
             method: 'GET',
-            data: { id: queueId },
+            data: { id: queueId, source: source || 'endorse_refresh' },
             dataType: 'json',
             success: function (resp) {
                 const rows = resp.data || [];
@@ -319,8 +319,8 @@ $campaigns = isset($campaigns) ? $campaigns : [];
                 } else {
                     rows.forEach(function (r) {
                         const checkable = r.status === 'failed';
-                        const cb = checkable ? '<input type="checkbox" class="row-check" value="' + r.id + '">' : '';
-                        const action = '<a href="#!" class="queue-action-link btn-history" data-id="' + r.id + '" data-campaign="' + escHtml(r.campaign_title || ('#' + r.id_campaign)) + '" data-influencer="' + escHtml(r.influencer_name || '-') + '" data-status="' + escHtml(r.status) + '">Riwayat</a>';
+                        const cb = checkable ? '<input type="checkbox" class="row-check" value="' + escHtml(r.queue_source || 'endorse_refresh') + ':' + r.id + '">' : '';
+                        const action = '<a href="#!" class="queue-action-link btn-history" data-source="' + escHtml(r.queue_source || 'endorse_refresh') + '" data-id="' + r.id + '" data-campaign="' + escHtml(r.campaign_title || ('#' + r.id_campaign)) + '" data-influencer="' + escHtml(r.influencer_name || '-') + '" data-status="' + escHtml(r.status) + '">Riwayat</a>';
                         $tbody.append(
                             '<tr>' +
                                 '<td>' + cb + '</td>' +
@@ -384,7 +384,7 @@ $campaigns = isset($campaigns) ? $campaigns : [];
             campaign_title: $(this).data('campaign'),
             influencer_name: $(this).data('influencer'),
             status: $(this).data('status')
-        });
+        }, $(this).data('source'));
     });
 
     $('#btnRetryFailed').on('click', function () {

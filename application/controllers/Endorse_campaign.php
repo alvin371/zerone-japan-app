@@ -283,6 +283,23 @@ class Endorse_campaign extends BaseController
                 $card_refresh_meta[$campaign_id]['pending_count'] = intval($row['pending_count'] ?? 0);
                 $card_refresh_meta[$campaign_id]['processing_count'] = intval($row['processing_count'] ?? 0);
             }
+            if ($this->db->table_exists('scraping_queue')) {
+                $thread_queue_raw = $this->mymodel->selectWithQuery("
+                    SELECT id_campaign,
+                      SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+                      SUM(CASE WHEN status IN ('submitted','polling') THEN 1 ELSE 0 END) AS processing_count
+                    FROM scraping_queue
+                    WHERE entity_type = 'endorse' AND scraper = 'threadsPost'
+                      AND id_campaign IN ($ids_str) AND status IN ('pending','submitted','polling')
+                    GROUP BY id_campaign
+                ");
+                foreach ($thread_queue_raw as $row) {
+                    $campaign_id = intval($row['id_campaign']);
+                    if (!isset($card_refresh_meta[$campaign_id])) $card_refresh_meta[$campaign_id] = [];
+                    $card_refresh_meta[$campaign_id]['pending_count'] = intval($card_refresh_meta[$campaign_id]['pending_count'] ?? 0) + intval($row['pending_count'] ?? 0);
+                    $card_refresh_meta[$campaign_id]['processing_count'] = intval($card_refresh_meta[$campaign_id]['processing_count'] ?? 0) + intval($row['processing_count'] ?? 0);
+                }
+            }
         }
 
         $data['data'] = $query;
