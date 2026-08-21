@@ -847,17 +847,6 @@ if ($view == 'table') {
     window.location.search = urlParams.toString();
     }
 
-    function loadMoreData() {
-    $.ajax({
-        type: 'GET',
-        url: "<?= base_url() ?>/endorse/item<?= $param ?>",
-        success: function(data) {
-            $('#tbody-loading').html('');
-            $('#tbody').append(data);
-        },
-        error: function(xhr, status, error) {}
-    });
-    }
 </script>
 
 <script type="text/javascript">

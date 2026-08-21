@@ -8,6 +8,7 @@ if (!function_exists('env')) {
 }
 
 require_once __DIR__ . '/../../application/libraries/Threads_scraper_api.php';
+require_once __DIR__ . '/../../application/libraries/Template.php';
 
 final class ThreadsScraperApiTest extends TestCase
 {
@@ -60,6 +61,11 @@ final class ThreadsScraperApiTest extends TestCase
     {
         self::assertSame('', Threads_scraper_api::canonicalPostUrl('https://example.com/@a/post/id'));
         self::assertSame('', Threads_scraper_api::canonicalPostUrl('https://www.threads.net/@a/profile'));
+    }
+
+    public function testThreadsPostQueueHasTwoSubmissionAttempts(): void
+    {
+        self::assertSame(2, Template::THREADS_POST_MAX_ATTEMPTS);
     }
 
     public function testMismatchedOrWrongPlatformResponsesAreRejected(): void

@@ -2,6 +2,7 @@
 
 class Template
 {
+    const THREADS_POST_MAX_ATTEMPTS = 2;
     public function index() {}
 
     function endpoint_url()
@@ -1372,7 +1373,7 @@ class Template
                 ->order_by('id', 'DESC')->get('scraping_queue')->row_array();
             if ($failed) {
                 $CI->db->update('scraping_queue', [
-                    'status' => 'pending', 'attempts' => 0, 'response_id' => null,
+                    'status' => 'pending', 'attempts' => 0, 'max_attempts' => self::THREADS_POST_MAX_ATTEMPTS, 'response_id' => null,
                     'submitted_at' => null, 'completed_at' => null, 'error_message' => null,
                     'scrape_url' => json_encode($params['params']), 'id_campaign' => $campaignId,
                     'canonical_url' => $canonicalUrl, 'next_poll_at' => null, 'poll_attempts' => 0,
@@ -1395,6 +1396,7 @@ class Template
         if ($type === 'Threads') {
             $row['id_campaign'] = $campaignId;
             $row['canonical_url'] = $canonicalUrl;
+            $row['max_attempts'] = self::THREADS_POST_MAX_ATTEMPTS;
         }
         $CI->db->insert('scraping_queue', $row);
 
