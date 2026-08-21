@@ -42,6 +42,26 @@ final class ThreadsScraperApiTest extends TestCase
         $this->assertSame(3, $result['data']['share']);
     }
 
+    public function testContractMapsZeroSavesAndCanonicalizesTrackingUrl(): void
+    {
+        $result = Threads_scraper_api::normalizePostResult([
+            'id' => 'Dbfa5wZmvyG', 'url' => 'https://www.threads.com/@putri/post/Dbfa5wZmvyG?utm=x',
+            'likes' => 3, 'views' => 209, 'comments' => 3, 'reposts' => 1,
+            'saves' => 0, 'quotes' => 0, 'caption' => "Halo\n世界", 'datetime' => '2026-08-01T08:33:52+00:00',
+        ], 'https://www.threads.net/@putri/post/Dbfa5wZmvyG?xmt=x', 'threads');
+        self::assertTrue($result['status']);
+        self::assertSame(0, $result['data']['collect']);
+        self::assertSame(1, $result['data']['share']);
+        self::assertSame('https://www.threads.net/@putri/post/Dbfa5wZmvyG', $result['data']['url']);
+        self::assertSame("Halo\n世界", $result['data']['caption']);
+    }
+
+    public function testMalformedOrForeignThreadsUrlIsRejected(): void
+    {
+        self::assertSame('', Threads_scraper_api::canonicalPostUrl('https://example.com/@a/post/id'));
+        self::assertSame('', Threads_scraper_api::canonicalPostUrl('https://www.threads.net/@a/profile'));
+    }
+
     public function testMismatchedOrWrongPlatformResponsesAreRejected(): void
     {
         $mismatch = Threads_scraper_api::normalizePostResult([

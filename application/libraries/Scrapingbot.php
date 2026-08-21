@@ -227,6 +227,9 @@ class Scrapingbot
         $status = strtolower(trim(strval($data['status'] ?? '')));
 
         if ($status === 'completed') {
+            if (!is_array($data['result'] ?? null)) {
+                return array('status' => 'error', 'data' => null, 'msg' => 'Job Threads completed without result data');
+            }
             return array(
                 'status' => 'success',
                 'data' => is_array($data['result'] ?? null) ? $data['result'] : array(),
@@ -234,7 +237,7 @@ class Scrapingbot
             );
         }
 
-        if (in_array($status, array('pending', 'running'), true)) {
+        if (in_array($status, array('queued', 'pending', 'started', 'running'), true)) {
             return array(
                 'status' => 'pending',
                 'data' => null,
@@ -251,11 +254,7 @@ class Scrapingbot
             );
         }
 
-        return array(
-            'status' => 'pending',
-            'data' => null,
-            'msg' => 'Scrape still processing',
-        );
+        return array('status' => 'error', 'data' => null, 'msg' => 'Unknown Threads job status: ' . $status);
     }
 
     private function threadsClient()
